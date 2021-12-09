@@ -56,8 +56,14 @@ namespace esxDOS
             // create a list of the ports we're interested in
             List<sIO> ports = new List<sIO>();
             ports.Add(new sIO(PC_Address, eAccess.Memory_EXE));                     // trap execution of RST $08
-            ports.Add(new sIO(SDCard_Read_Port, eAccess.Port_Read));                // read a streaming file
-            ports.Add(new sIO(SDCard_Write_Port, eAccess.Port_Write));              // track SD card selection
+            for (int i = SDCard_Read_Port; i <= 0xff00+ SDCard_Read_Port; i += 0x100)
+            {
+                ports.Add(new sIO(i, eAccess.Port_Read));                // read a streaming file
+            }
+            for (int i = SDCard_Write_Port; i <= 0xff00 + SDCard_Write_Port; i += 0x100)
+            {
+                ports.Add(new sIO(i, eAccess.Port_Write));                  // track SD card selection
+            }
             //ports.Add(new sIO("<ctrl><alt>c", 0, eAccess.KeyPress));                   // Key press callback
             return ports;
         }
@@ -114,7 +120,7 @@ namespace esxDOS
         // **********************************************************************
         public bool Write(eAccess _type, int _port, byte _value)
         {
-            if( _type==eAccess.Port_Write && _port==0xe7 )
+            if( _type==eAccess.Port_Write && (_port&0xff)==0xe7 )
             {
                 // remember the value written so we know if it's SD card 1 or 2. We're only interested in SD card 1.
                 port_e7 = _value;
@@ -134,15 +140,23 @@ namespace esxDOS
         public byte Read(eAccess _type, int _port, out bool _isvalid)
         {
             _isvalid = false;
-            if (_type == eAccess.Memory_EXE && _port == PC_Address)
+
+            // esxDOS active? (when full NEXT ROM active, we're disabled)
+            bool active = (bool)CSpect.GetGlobal(eGlobal.esxDOS);
+            if (!active) return 0;
+
+            if (_type == eAccess.Memory_EXE && _port== PC_Address)
             {
+                int b = CSpect.GetNextRegister(0x50);
+                if (b != 255) return 0;
+
                 _isvalid = true;
                 DoFileOps();
                 return (byte)0;
             }
-            else if ( _type == eAccess.Port_Read && _port == 0xEb && port_e7 == 0xfe )
+            else if ( _type == eAccess.Port_Read && (_port & 0xff) == 0xEb && port_e7 == 0xfe )
             {
-                bool active = (bool) CSpect.GetGlobal(eGlobal.SDCardActive0);
+                active = (bool) CSpect.GetGlobal(eGlobal.SDCardActive0);
                 if (!active)
                 {
                     _isvalid = true;
