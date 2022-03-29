@@ -65,6 +65,7 @@ namespace esxDOS
                 ports.Add(new sIO(i, eAccess.Port_Write));                  // track SD card selection
             }
             //ports.Add(new sIO("<ctrl><alt>c", 0, eAccess.KeyPress));                   // Key press callback
+            ports.Add(new sIO(0xfe, eAccess.Port_Write));
             return ports;
         }
 
@@ -118,7 +119,7 @@ namespace esxDOS
         /// <param name="_port">the port being written to</param>
         /// <param name="_value">the value to write</param>
         // **********************************************************************
-        public bool Write(eAccess _type, int _port, byte _value)
+        public bool Write(eAccess _type, int _port, int _id, byte _value)
         {
             if( _type==eAccess.Port_Write && (_port&0xff)==0xe7 )
             {
@@ -137,7 +138,7 @@ namespace esxDOS
         /// <param name="_isvalid"></param>
         /// <returns></returns>
         // **********************************************************************
-        public byte Read(eAccess _type, int _port, out bool _isvalid)
+        public byte Read(eAccess _type, int _port, int _id, out bool _isvalid)
         {
             _isvalid = false;
 
@@ -556,7 +557,6 @@ namespace esxDOS
                 return true;
             }
 
-
             if (regs.A == 0) return true;           // file handle 0?
             FileStream handle = FileHandles[regs.A];
             if (handle == null) return true;
@@ -587,16 +587,25 @@ namespace esxDOS
                 }
                 regs.B = (counter >> 8) & 0xff;
                 regs.C = (counter & 0xff);
-                regs.IX = (UInt16)(address & 0xffff);
+                regs.HL = (UInt16)(address & 0xffff);
                 FilePointers[regs.A] = file_head;
             }
             else
             {
                 // read data
-                int val = FileHandles[regs.A].Read(filebuffer, 0, size);  //_read(handle, &(filebuffer[0]), size);
-
+                int val = 0;
+                try
+                {
+                    val = FileHandles[regs.A].Read(filebuffer, 0, size);  //_read(handle, &(filebuffer[0]), size);
+                }
+                catch
+                {
+                    regs.DE = regs.BC = 0;
+                    return true;
+                }
                 regs.B = (val >> 8) & 0xff;
                 regs.C = (val & 0xff);
+                regs.DE = regs.BC;
 
                 // write to memory through whatever banks are set - this could be better in the extension....
                 for (int i = 0; i < size; i++)
@@ -604,7 +613,7 @@ namespace esxDOS
                     byte b = filebuffer[i];
                     CSpect.Poke((UInt16) address++, b);
                 }
-                regs.IX = (UInt16) (address & 0xffff);
+                regs.HL = (UInt16) (address & 0xffff);
             }
             return false;
         }
@@ -637,10 +646,18 @@ namespace esxDOS
             byte[] data = CSpect.Peek((UInt16)address, size);
             address += size;
 
-            // write data
-            handle.Write(data, 0, size);
-
-            regs.IX += (UInt16)size;
+            try
+            {
+                // write data
+                handle.Write(data, 0, size);
+            }
+            catch
+            {
+                regs.BC = 0;
+                return true;
+            }
+            regs.BC = (ushort)size;
+            //regs.IX += (UInt16)size; // does not change
             return false;
         }
 
