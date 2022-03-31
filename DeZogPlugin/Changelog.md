@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.1.1
+- Integrated into the #CSpect mainline and plugin interface updated.
+
 ## 2.1.0
 - Updated reference to CSpect 2.15.1. (increased major number as CSpect increased major number).
 

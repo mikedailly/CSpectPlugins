@@ -10,24 +10,28 @@ using System.Threading;
 
 namespace DeZogPlugin
 {
-    /**
-     * This static class implements a simple logging functionality.
-     * Use e.g.
-     * ~~~
-     * if(Log.Enabled)
-     *     Log.Write("bytesRead={0}, MsgLength={1}", bytesRead, state.MsgLength);
-     * ~~~
-     *
-     * Usage:
-     * - if(Log.Enabled)  Log.Write(....
-     *   For conditional logs. Logs will not appear if logging is not enabled.
-     * - Log.Write(....
-     *   For Logs that will always appear. E.g. for errors or exceptions.
-     * - Log.ConsoleWrite(...
-     *   For 'normal' user information. These logs will always be printed also on the console.
-     *   This is for future, if I decide to log also into a file. Then the normal Log.Write
-     *   would not be visible to the user.
-     */
+    /// <summary>
+    /// This static class implements a simple logging functionality.
+    /// </summary>
+    /// <remarks>
+    /// 
+    /// Use e.g.
+    /// ~~~
+    /// if(Log.Enabled)
+    ///     Log.Write("bytesRead={0}, MsgLength={1}", bytesRead, state.MsgLength);
+    /// ~~~
+    /// 
+    /// Usage:
+    /// - if(Log.Enabled)  Log.Write(....
+    ///   For conditional logs. Logs will not appear if logging is not enabled.
+    /// - Log.Write(....
+    ///   For Logs that will always appear. E.g. for errors or exceptions.
+    /// - Log.ConsoleWrite(...
+    ///   For 'normal' user information. These logs will always be printed also on the console.
+    ///   This is for future, if I decide to log also into a file. Then the normal Log.Write
+    ///   would not be visible to the user.
+    /// 
+    /// </remarks>
     public class Log
     {
         /// <summary>
@@ -46,10 +50,12 @@ namespace DeZogPlugin
         /// </summary>
         static private int PrefixColumn = 0;
 
-        /**
-         * Writes a formatted string.
-         * E.g. use Log.Write("bytesRead={0}, MsgLength={1}", bytesRead, state.MsgLength);
-         */
+        /// <summary>
+        ///     Writes a formatted string.
+        ///     E.g. use Log.Write("bytesRead={0}, MsgLength={1}", bytesRead, state.MsgLength);
+        /// </summary>
+        /// <param name="format"></param>
+        /// <param name="args"></param>
         static public void Write(string format, params object[] args)
         {
             if(PrefixColumn==0)
@@ -59,10 +65,12 @@ namespace DeZogPlugin
             PrefixColumn += text.Length;
         }
 
-        /**
-         * Writes a formatted string and adds a newline.
-         * E.g. use Log.Write("bytesRead={0}, MsgLength={1}", bytesRead, state.MsgLength);
-         */
+        /// <summary>
+        ///     Writes a formatted string and adds a newline.
+        ///     E.g. use Log.Write("bytesRead={0}, MsgLength={1}", bytesRead, state.MsgLength);
+        /// </summary>
+        /// <param name="format"></param>
+        /// <param name="args"></param>
         static public void WriteLine(string format, params object[] args)
         {
             if (PrefixColumn == 0)
@@ -72,9 +80,9 @@ namespace DeZogPlugin
             PrefixColumn = 0;
         }
 
-        /**
-         * Writes an empty line.
-         */
+        /// <summary>
+        ///     Writes an empty line.
+        /// </summary>
         static public void WriteLine()
         {
             Console.WriteLine();

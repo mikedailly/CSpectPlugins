@@ -6,11 +6,11 @@ using System.Threading.Tasks;
 
 namespace Plugin
 {
-    // ********************************************************
+    // ****************************************************************************************************************
     /// <summary>
     ///     Type of access
     /// </summary>
-    // ********************************************************
+    // ****************************************************************************************************************
     public enum eAccess
     {
         /// <summary>All READ data comes FROM this port</summary>
@@ -32,11 +32,11 @@ namespace Plugin
     };
 
 
-    // ********************************************************
+    // ****************************************************************************************************************
     /// <summary>
     ///     IO access structure
     /// </summary>
-    // ********************************************************
+    // ****************************************************************************************************************
     public struct sIO
     {
         /// <summary>The port to register</summary>
@@ -48,40 +48,53 @@ namespace Plugin
         /// <summary>The type of port access</summary>
         public eAccess Type;
 
-        // ********************************************************
+        /// <summary>Optional user ID</summary>
+        public int ID;
+
+        /// <summary>The priority of the port/address/keypress - only change if absolutely necessary</summary>
+        public int Priority;
+
+        // ****************************************************************************************************************
         /// <summary>
         ///     Create a new IO interface
         /// </summary>
         /// <param name="_port">The port/address to attach to</param>
         /// <param name="_type">The type of access</param>
-        // ********************************************************
-        public sIO(int _port, eAccess _type)
+        /// <param name="_id">value passed back allowing identification of an IO interaction</param>
+        /// <param name="_priority">Plugin priority - only change if absolutely necessary</param>
+        // ****************************************************************************************************************
+        public sIO(int _port, eAccess _type, int _id=0, int _priority = 0)
         {
             Port = _port;
             Type = _type;
             CMD = "";
+            ID = _id;
+            Priority = _priority;
         }
-        // ********************************************************
+        // ****************************************************************************************************************
         /// <summary>
         ///     Create a new IO interface
         /// </summary>
         /// <param name="_cmd">The cmd/key to attach to</param>
-        /// <param name="_id">value returned on callback to easily ID keys etc</param>
         /// <param name="_type">The type of access</param>
-        // ********************************************************
-        public sIO(string _cmd, int _id, eAccess _type)
+        /// <param name="_id">value returned on callback to easily ID keys etc</param>
+        /// <param name="_priority">Plugin priority - only change if absolutely necessary</param>
+        // ****************************************************************************************************************
+        public sIO(string _cmd, eAccess _type, int _id=0, int _priority = 0)
         {
             CMD = _cmd;
             Type = _type;
-            Port = _id;
+            Port = 0;
+            ID = _id;
+            Priority = _priority;
         }
     }
 
-    // ********************************************************
+    // ****************************************************************************************************************
     /// <summary>
     ///     The Plugin interface
     /// </summary>
-    // ********************************************************
+    // ****************************************************************************************************************
     public interface iPlugin
     {
         // -------------------------------------------------------
@@ -93,27 +106,29 @@ namespace Plugin
 
         // -------------------------------------------------------
         /// <summary>
-        /// Write to one of the registered ports
+        ///     Write to one of the registered ports
         /// </summary>
-        /// <param name="_address">The port/address top write to</param>
-        /// <param name="_value">The value to write</param>
+        /// <param name="_type">Type of access</param>
+        /// <param name="_port">Port/Address being accessed</param>
+        /// <param name="_id">optional ID returned</param>
         /// <returns>
         ///     True to indicate if the write has been dealt with
         /// </returns>
         // -------------------------------------------------------
-        bool Write(eAccess _type, int _port, byte _value );
+        bool Write(eAccess _type, int _port, int _id, byte _value );
 
         // -------------------------------------------------------
         /// <summary>
         ///     Read from a registered port ( or cpu execute )
         /// </summary>
-        /// <param name="_address">The port/address to read from</param>
-        /// <param name="_isvalid">Is the data valid? (if false, checks next device)</param>
+        /// <param name="_type">Type of access</param>
+        /// <param name="_port">Port/Address being accessed</param>
+        /// <param name="_id">optional ID returned</param>
         /// <returns>
         ///     Byte to return, or ignored if _isvalid == false
         /// </returns>
         // -------------------------------------------------------
-        byte Read(eAccess _type, int _address, out bool _isvalid);
+        byte Read(eAccess _type, int _port, int _id, out bool _isvalid);
 
         // -------------------------------------------------------
         /// <summary>

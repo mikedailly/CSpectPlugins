@@ -9,10 +9,10 @@ using Plugin;
 
 namespace DeZogPlugin
 {
-    /**
-     * The plugin implements a socket to communicate with [DeZog](https://github.com/maziac/DeZog).
-     * The received commands are executed and control the CSpect debugger.
-     */
+    /// <summary>
+    ///     The plugin implements a socket to communicate with[DeZog](https://github.com/maziac/DeZog).
+    ///     The received commands are executed and control the CSpect debugger.
+    /// </summary>
     public class Main : iPlugin
     {
 
@@ -21,10 +21,12 @@ namespace DeZogPlugin
         public static Settings Settings;
 
 
-        /**
-         * Initialization. Called by CSpect.
-         * Returns a list with the ports to be registered.
-         */
+        /// <summary>
+        ///     Initialization.Called by CSpect.
+        ///     Returns a list with the ports to be registered.
+        /// </summary>
+        /// <param name="_CSpect"></param>
+        /// <returns></returns>
         public List<sIO> Init(iCSpect _CSpect)
         {
             string version = typeof(Main).Assembly.GetName().Version.ToString();
@@ -50,9 +52,9 @@ namespace DeZogPlugin
         }
 
 
-        /**
-         * Called by CSpect to quit the plugin.
-         */
+        /// <summary>
+        ///     Called by CSpect to quit the plugin.
+        /// </summary>
         public void Quit()
         {
             // If the program is stopped the socket is closed anyway.
@@ -60,52 +62,58 @@ namespace DeZogPlugin
         }
 
 
-        /**
-         * Called every frame. I.e. interrupt.
-         */
+        /// <summary>
+        ///     Called every frame. I.e. interrupt.
+        /// </summary>
         public void Tick()
         {
             Commands.Tick();
         }
-        
 
-        /**
-         * Writes a TX byte (_value).
-         * Unused.
-         */
-        public bool Write(eAccess _type, int _port, byte _value)
+
+        /// <summary>
+        ///     Unused.
+        /// </summary>
+        /// <param name="_type"></param>
+        /// <param name="_port"></param>
+        /// <param name="_id"></param>
+        /// <param name="_value"></param>
+        /// <returns></returns>
+        public bool Write(eAccess _type, int _port, int _id, byte _value)
         {
             return true;
         }
 
 
-        /**
-         * Reads the state or reads a byte from the receive fifo.
-         * _isvalid is set to true if the returned value could be provided.
-         * Unused.
-         */
-        public byte Read(eAccess _type, int _port, out bool _isvalid)
+        /// <summary>
+        ///     Unused
+        /// </summary>
+        /// <param name="_type"></param>
+        /// <param name="_port"></param>
+        /// <param name="_id"></param>
+        /// <param name="_isvalid"></param>
+        /// <returns></returns>
+        public byte Read(eAccess _type, int _port, int _id, out bool _isvalid)
         {
             _isvalid = false;
             return 0;
         }
 
 
-        /**
-         * Called whenever a key is pressed.
-         * @param _id The key id.
-         * @returns true if the plugin handled the key.
-         */
+        /// <summary>
+        ///     Called whenever a key is pressed.
+        /// </summary>
+        /// <param name="_id">The key id.</param>
+        /// <returns>true if the plugin handled the key.</returns>
         public bool KeyPressed(int _id)
         {
             // Not used
             return false;
         }
 
-
-        /**
-         * Called when the machine is reset.
-         */
+        /// <summary>
+        ///     Called when the machine is reset.
+        /// </summary>
         public void Reset()
         {
             // Not used

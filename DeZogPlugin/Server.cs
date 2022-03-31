@@ -12,7 +12,7 @@ using System.Threading;
 namespace DeZogPlugin
 {
 
-    // The command enums.    
+    /// <summary>The command enums.</summary>
     public enum DZRP {
         // ZXNext: All Commands available in ZXNext (need to be consecutive)
         CMD_INIT = 1,
@@ -51,82 +51,85 @@ namespace DeZogPlugin
     }
 
 
-    // The notifications
+    /// <summary>The notifications </summary>
     public enum DZRP_NTF
     {
         NTF_PAUSE = 1
     }
 
 
-    /**
-     * Defines the machine type that is returned in CMD_INIT.
-     * It is required to determine the memory model.
-     */
+    /// <summary>Defines the machine type that is returned in CMD_INIT. It is required to determine the memory model.</summary>
     public enum DzrpMachineType
     {
+        /// <summary>ZX Spectrum 16K machine</summary>
         ZX16K = 1,
+        /// <summary>ZX Spectrum 48K machine</summary>
         ZX48K = 2,
+        /// <summary>ZX Spectrum 128K machine</summary>
         ZX128K = 3,
+        /// <summary>ZX Spectrum Next machine</summary>
         ZXNEXT = 4
     }
 
 
-    // State object for reading client data asynchronously  
+    /// <summary>State object for reading client data asynchronously</summary>
     public class StateObject
     {
-        // Client  socket.  
+        /// <summary>Client  socket.</summary>
         public Socket workSocket = null;
-        // Size of receive buffer.  
+        /// <summary>Size of receive buffer.</summary>
         public const int BufferSize = 1024;
-        // Receive buffer.  
+        /// <summary>Receive buffer.</summary>
         public byte[] buffer = new byte[BufferSize];
-        // Received data string.  
+        /// <summary>Received data string.</summary>
         public StringBuilder sb = new StringBuilder();
-        // A message is collected into this list until it is complete.
+        /// <summary>A message is collected into this list until it is complete.</summary>
         public List<byte> Data = new List<byte>();
-        // The length of the currently received message.
+        /// <summary>The length of the currently received message.</summary>
         public int MsgLength = 0;
-        // Set if some communication error occurred.
+        /// <summary>Set if some communication error occurred.</summary>
         public bool error = false;
     }
 
 
-    /*
-     * The used socket protocol is simple. It consists of header and payload.
-     *
-     * Message:
-     * int Length: The length of the following bytes containing Command. Little endian. Size=4.
-     * byte SeqNo:  Sequence number (must be returned in response)
-     * byte Command: UART_DATA.
-     * Payload bytes: The data
-     *
-     * A client may connect at anytime.
-     * A connection is terminated only by the client.
-     * If a connection has been terminated a new connection can be established.
-     */
+    /// <summary>
+    ///     The used socket protocol is simple.It consists of header and payload.
+    /// </summary>
+    /// <remarks>
+    ///     Message:
+    ///      int Length: The length of the following bytes containing Command. Little endian. Size= 4.
+    ///     
+    ///     byte SeqNo:  Sequence number (must be returned in response)
+    ///      byte Command: UART_DATA.
+    ///      Payload bytes: The data
+    ///     
+    ///      A client may connect at anytime.
+    ///      A connection is terminated only by the client.
+    ///      If a connection has been terminated a new connection can be established.
+    /// </remarks>
     public class CSpectSocket
     {
-        // The used port
+        ///<summary>The used port</summary>
         public static int Port;
 
-        // The received data.
+        ///<summary>The received data.</summary>
         protected static List<byte> DzrpData = new List<byte>();
 
-        // The connected client.
+        ///<summary>The connected client.</summary>
         protected static StateObject socket = null;
 
-        // Constants for the header parameters.
+        ///<summary>Constants for the header length.</summary>
         protected const int HEADER_LEN_LENGTH = 4;
+        ///<summary>Constants for the header sequence length.</summary>
         protected const int HEADER_CMD_SEQNO_LENGTH = 2;
 
-        // Stores the received sequence number.
+        ///<summary>Stores the received sequence number.</summary>
         protected static byte receivedSeqno = 0;
         
 
-        /**
-         * Call this to start listiening on 'Port'.
-         * Is asynchronous, i.e. not blocking.
-         */
+        /// <summary>
+        ///     Call this to start listiening on 'Port'. Is asynchronous, i.e.not blocking.
+        /// </summary>
         public static void StartListening()
         {
             socket = null;
@@ -160,9 +163,9 @@ namespace DeZogPlugin
         }
 
 
-        /**
-         * A client has connected.
-         */
+        /// <summary>
+        ///     A client has connected.
+        /// </summary>
         protected static void AcceptCallback(IAsyncResult ar)
         {
             // Init
@@ -188,10 +191,9 @@ namespace DeZogPlugin
         }
 
 
-        /**
-         * Data from the client has been received
-         * (or the connection was closed).
-         */
+        /// <summary>
+        ///     Data from the client has been received (or the connection was closed).
+        /// </summary>
         public static void ReadCallback(IAsyncResult ar)
         {
             // from the asynchronous state object.  
@@ -294,10 +296,9 @@ namespace DeZogPlugin
         }
 
 
-        /**
-         * One complete message from the client has been received.
-         * The message is interpreted.
-         */
+        /// <summary>
+        ///     One complete message from the client has been received. The message is interpreted.
+        /// </summary>
         protected static void ParseMessage(Socket socket, List<byte> data)
         {
             if (Log.Enabled)
@@ -414,9 +415,9 @@ namespace DeZogPlugin
         }
 
 
-        /**
-         * Prints an error text and disconnects.
-         */
+        /// <summary>
+        ///     Prints an error text and disconnects.
+        /// </summary>
         protected static void HandleError(string text, Socket socket=null)
         {
 
@@ -436,10 +437,9 @@ namespace DeZogPlugin
         }
 
 
-        /**
-         * Used to retrieve one element from the buffer.
-         * Returns the data or throws an exception if no data available.
-         */
+        /// <summary>
+        ///     Used to retrieve one element from the buffer. Returns the data or throws an exception if no data available.
+        /// </summary>
         public static byte GetDataByte()
         {
             // Check if daa available
@@ -455,10 +455,10 @@ namespace DeZogPlugin
         }
 
 
-        /**
-         * Used to retrieve 2 elements (a word) from the buffer.
-         * Returns the data or throws an exception if no data available.
-         */
+        /// <summary>
+        ///     Used to retrieve 2 elements(a word) from the buffer.
+        ///     Returns the data or throws an exception if no data available.
+        /// </summary>
         public static ushort GetDataWord()
         {
             // Check if data available
@@ -475,12 +475,12 @@ namespace DeZogPlugin
         }
 
 
-        /**
-         * Used to retrieve 3 elements (a long address) from the buffer.
-         * Returns the data or throws an exception if no data available.
-         * Already checks if the address is long or 64k and returns the
-         * adjusted address.
-         */
+        /// <summary>
+        ///     Used to retrieve 3 elements(a long address) from the buffer.
+        ///     Returns the data or throws an exception if no data available.
+        ///     Already checks if the address is long or 64k and returns the
+        ///     adjusted address.
+        /// </summary>
         public static int GetLongAddress()
         {
             // Check if data available
@@ -500,10 +500,7 @@ namespace DeZogPlugin
             return adjustedAddress;
         }
 
-
-        /**
-          * Returns the data buffer.
-          */
+        /// <summary>Returns the data buffer.</summary>
         public static List<byte> GetRemainingData()
         {
             // Return
@@ -511,9 +508,10 @@ namespace DeZogPlugin
         }
 
 
-        /**
-          * Returns the remaining data length.
-          */
+
+        /// <summary>
+        ///     Returns the remaining data length.
+        /// </summary>
         public static int GetRemainingDataCount()
         {
             // Return
@@ -521,9 +519,9 @@ namespace DeZogPlugin
         }
 
 
-        /**
-         * Sends the response.
-         */
+        /// <summary>
+        ///     Sends the response.
+        /// </summary>
         public static void SendResponse(byte[] byteData=null)
         {
             // Length
@@ -543,9 +541,10 @@ namespace DeZogPlugin
         }
 
 
-        /**
-         * Used to send bytes to the socket.
-         */
+
+        /// <summary>
+        ///    Used to send bytes to the socket.
+        /// </summary>
         public static void Send(byte[] byteData)
         {
             if (CSpectSocket.socket == null)
@@ -561,9 +560,9 @@ namespace DeZogPlugin
         }
 
 
-        /**
-         * The async callback for sending.
-         */
+        /// <summary>
+        ///    The async callback for sending.
+        /// </summary>
         protected static void SendCallback(IAsyncResult ar)
         {
             try
@@ -583,9 +582,9 @@ namespace DeZogPlugin
         }
 
 
-        /**
-         * Creates a string from data bytes.
-         */
+        /// <summary>
+        ///    Creates a string from data bytes.
+        /// </summary>
         protected static string GetStringFromData(byte[] data, int start = 0, int count = -1)
         {
             if (count == -1)
@@ -607,9 +606,9 @@ namespace DeZogPlugin
         }
 
 
-        /**
-         * Writes a received command message to the Log.
-         */
+        /// <summary>
+        ///    Writes a received command message to the Log.
+        /// </summary>
         protected static void WriteCmd(byte[] data)
         {
             int count = data.Length;
@@ -634,9 +633,9 @@ namespace DeZogPlugin
         }
 
 
-        /**
-         * Writes a sent response message to the Log.
-         */
+        /// <summary>
+        ///    Writes a sent response message to the Log.
+        /// </summary>
         protected static void WriteResp(byte[] data)
         {
             int count = data.Length;

@@ -1128,7 +1128,7 @@ namespace DeZogPlugin
             // Bit 7: 0=first (8bit color), 1=second (9th bit color)
             byte machineReg = cspect.GetNextRegister(0x03);
             // Select sprites
-            byte selSprites = (byte)((eUlaCtrlReg & 0x0F) | 0b0010_0000 | (paletteIndex << 6));
+            byte selSprites = (byte)((eUlaCtrlReg & 0x0F) | 32 | (paletteIndex << 6));
             cspect.SetNextRegister(0x43, selSprites); // Resets also 0x44
              // Read palette
             for (int i = 0; i < 256; i++)

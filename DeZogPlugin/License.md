@@ -1,4 +1,9 @@
-﻿
+﻿The DeZog plugin has a different license from the rest of the CSpect Plugins.
+This MIT license only applies to this single plugin
+----------------------------------------------------------------------------
+
+
+
 MIT License
 
 Copyright (c) 2020 maziac

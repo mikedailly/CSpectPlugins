@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "i2C_Sample", "..\i2C_Sample
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Plugin", "..\Plugin\Plugin.csproj", "{192437A5-3030-4606-BB5A-2C86ECE66AEF}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DeZogPlugin", "..\DeZogPlugin\DeZogPlugin.csproj", "{F3321E74-8A1E-4F76-AAE5-D1971FBFA011}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -81,6 +83,18 @@ Global
 		{192437A5-3030-4606-BB5A-2C86ECE66AEF}.Release|x64.Build.0 = Release|Any CPU
 		{192437A5-3030-4606-BB5A-2C86ECE66AEF}.Release|x86.ActiveCfg = Release|Any CPU
 		{192437A5-3030-4606-BB5A-2C86ECE66AEF}.Release|x86.Build.0 = Release|Any CPU
+		{F3321E74-8A1E-4F76-AAE5-D1971FBFA011}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F3321E74-8A1E-4F76-AAE5-D1971FBFA011}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F3321E74-8A1E-4F76-AAE5-D1971FBFA011}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{F3321E74-8A1E-4F76-AAE5-D1971FBFA011}.Debug|x64.Build.0 = Debug|Any CPU
+		{F3321E74-8A1E-4F76-AAE5-D1971FBFA011}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{F3321E74-8A1E-4F76-AAE5-D1971FBFA011}.Debug|x86.Build.0 = Debug|Any CPU
+		{F3321E74-8A1E-4F76-AAE5-D1971FBFA011}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F3321E74-8A1E-4F76-AAE5-D1971FBFA011}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F3321E74-8A1E-4F76-AAE5-D1971FBFA011}.Release|x64.ActiveCfg = Release|Any CPU
+		{F3321E74-8A1E-4F76-AAE5-D1971FBFA011}.Release|x64.Build.0 = Release|Any CPU
+		{F3321E74-8A1E-4F76-AAE5-D1971FBFA011}.Release|x86.ActiveCfg = Release|Any CPU
+		{F3321E74-8A1E-4F76-AAE5-D1971FBFA011}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

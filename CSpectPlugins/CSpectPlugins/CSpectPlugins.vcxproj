@@ -118,6 +118,9 @@
     <ProjectReference Include="..\..\CopperDissassembler\CopperDissassembler.csproj">
       <Project>{93d54582-277e-4aca-a6ab-9cadf5ba1886}</Project>
     </ProjectReference>
+    <ProjectReference Include="..\..\DeZogPlugin\DeZogPlugin.csproj">
+      <Project>{f3321e74-8a1e-4f76-aae5-d1971fbfa011}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\..\esxDOS\esxDOS.csproj">
       <Project>{b93cbdd5-a736-43a5-bbe4-4f0cd9bc5993}</Project>
     </ProjectReference>

@@ -7,30 +7,26 @@ using System.Xml.Serialization;
 
 namespace DeZogPlugin
 {
+    /// <summary>
+    ///     Debugger Settings
+    /// </summary>
     public class Settings
     {
-        /**
-         *  The port that clients can connect to.
-         */
+        /// <summary>The port that clients can connect to.</summary>
         public int Port { get; set; } = 11000;  // Default
 
-        /**
-         * If log is enabled.
-         */
+        /// <summary>If log is enabled.</summary>
         public bool LogEnabled { get; set; } = false;  // Default
 
 
-        /**
-         * Constructor.
-         */
-        public Settings()
-        {
-        }
+        /// <summary>Constructor.</summary>
+        public Settings(){ }
 
 
-        /**
-         * Load the settings file.
-         */
+        /// <summary>
+        ///     Load the settings file.
+        /// </summary>
+        /// <returns></returns>
         public static Settings Load()
         {
             Settings settings;

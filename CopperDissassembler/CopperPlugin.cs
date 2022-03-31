@@ -39,7 +39,7 @@ namespace CopperDissassembler
 
             // Detect keypress for starting disassembler
             List<sIO> ports = new List<sIO>();
-            ports.Add(new sIO("<ctrl><alt>c", 0, eAccess.KeyPress));                   // Key press callback
+            ports.Add(new sIO("<ctrl><alt>c", eAccess.KeyPress, 0));                   // Key press callback
             return ports;
         }
 
@@ -78,7 +78,7 @@ namespace CopperDissassembler
         /// <param name="_isvalid"></param>
         /// <returns></returns>
         // ******************************************************************************************
-        public byte Read(eAccess _type, int _address, out bool _isvalid)
+        public byte Read(eAccess _type, int _address, int _id, out bool _isvalid)
         {
             _isvalid = false;
             return 0;
@@ -125,7 +125,7 @@ namespace CopperDissassembler
         /// <param name="_value"></param>
         /// <returns></returns>
         // ******************************************************************************************
-        public bool Write(eAccess _type, int _port, byte _value)
+        public bool Write(eAccess _type, int _port, int _id, byte _value)
         {
             return false;
         }

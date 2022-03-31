@@ -1,2 +1,13 @@
 *.suo
 CSpectPlugins/.vs/
+CopperDissassembler/bin/
+CopperDissassembler/obj/
+CSpectPlugins/CSpectPlugins/Debug/
+CSpectPlugins/Debug/
+esxDOS/bin/Debug/esxDOS.dll
+esxDOS/bin/
+esxDOS/obj/
+i2C_Sample/bin/
+i2C_Sample/obj/
+Plugin/bin/
+Plugin/obj/

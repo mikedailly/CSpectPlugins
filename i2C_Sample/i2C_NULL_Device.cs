@@ -41,7 +41,7 @@ namespace i2C_Sample
             ports.Add(new sIO(PORT_DATA, eAccess.Port_Read));
             ports.Add(new sIO(PORT_CLOCK, eAccess.Port_Write));
             ports.Add(new sIO(PORT_DATA, eAccess.Port_Write));
-            ports.Add(new sIO(0xfe, eAccess.Port_Write));
+            ports.Add(new sIO(0xfe, eAccess.Port_Write, 12));
             return ports;
         }
 
@@ -108,10 +108,15 @@ namespace i2C_Sample
         /// <summary>
         ///     Write a value to one of the registered ports
         /// </summary>
-        /// <param name="_port">the port being written to</param>
-        /// <param name="_value">the value to write</param>
+        /// <param name="_type">Type of access</param>
+        /// <param name="_port">Port/Address being accessed</param>
+        /// <param name="_id">optional ID returned</param>
+        /// <returns>
+        ///     TRUE for "handled"
+        ///     FALSE for not handled - try next plugin
+        /// </returns>
         // **********************************************************************
-        public bool Write(eAccess _type, int _port, byte _value)
+        public bool Write(eAccess _type, int _port, int _id, byte _value)
         {
             //if (_type == eAccess.Port_Write && _port == 0xfe)
             //{
@@ -135,13 +140,17 @@ namespace i2C_Sample
 
         // **********************************************************************
         /// <summary>
-        ///     
+        ///     Read access
         /// </summary>
-        /// <param name="_port"></param>
-        /// <param name="_isvalid"></param>
-        /// <returns></returns>
+        /// <param name="_type">Type of access</param>
+        /// <param name="_port">Port/Address being accessed</param>
+        /// <param name="_id">optional ID returned</param>
+        /// <param name="_isvalid">OUT: is this plugin result valid?</param>
+        /// <returns>
+        ///     result
+        /// </returns>
         // **********************************************************************
-        public byte Read(eAccess _type, int _port, out bool _isvalid)
+        public byte Read(eAccess _type, int _port, int _id,out bool _isvalid)
         {
             _isvalid = false;
             if ( _type == eAccess.Port_Read && _port==0xfe)
@@ -164,3 +173,4 @@ namespace i2C_Sample
         }
     }
 }
+
