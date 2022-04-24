@@ -40,6 +40,7 @@ namespace CopperDissassembler
             // Detect keypress for starting disassembler
             List<sIO> ports = new List<sIO>();
             ports.Add(new sIO("<ctrl><alt>c", eAccess.KeyPress, 0));                   // Key press callback
+            ports.Add(new sIO("<ctrl><alt>s", eAccess.KeyPress, 1));                   // toggle copper/irq visualiser
             return ports;
         }
 
@@ -52,11 +53,22 @@ namespace CopperDissassembler
         // ******************************************************************************************
         public bool KeyPressed(int _id)
         {
-            if (Active) return true;
 
-            Active = true;
-            form = new CopperDissForm(CopperMemory, CopperIsWritten);
-            form.Show();
+            if (_id == 0)
+            {
+                if (Active) return true;
+                Active = true;
+                form = new CopperDissForm(CopperMemory, CopperIsWritten);
+                form.Show();
+            }
+            else if (_id == 1)
+            {
+                // Toggle the copper wait and IRQ trigger visualiser
+                bool b = (bool)CSpect.GetGlobal(eGlobal.copper_wait);
+                bool i = (bool)CSpect.GetGlobal(eGlobal.irq_wait);
+                CSpect.SetGlobal(eGlobal.copper_wait, !b);
+                CSpect.SetGlobal(eGlobal.irq_wait, !i);
+            }
             return false;
         }
 

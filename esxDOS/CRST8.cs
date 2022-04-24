@@ -2,7 +2,6 @@
 //      CSpect esxDOS extension, allowing access to the RST $08 function in the CSpect emulator
 //      Written by:
 //                  Mike Dailly
-
 //      contributions by:
 //                  
 //      Released under the GNU 3 license - please see license file for more details
@@ -38,7 +37,178 @@ namespace esxDOS
         public bool m_Internal = false;
         public byte port_e7 = 0;
 
+        public const int IM0 = 0;
+        public const int IM1 = 1;
+        public const int IM2 = 2;
+
+        /// <summary>Z80 CPU flag bits</summary>
+        [Flags]
+        public enum eCPUFlags : UInt16
+        {
+            None = 0x00,
+            C = 0x01,
+            N = 0x02,
+            PV = 0x04,
+            b3 = 0x08,
+            H = 0x10,
+            b5 = 0x20,
+            Z = 0x40,
+            S = 0x80
+        };
+
+
+
+        //****************************************************************************
+        /// <summary>File info</summary>
+        //****************************************************************************
+        public struct sFileInfo
+        {
+            public byte Attrib;
+            public UInt16 timestamp;
+            public UInt16 datestamp;
+            public UInt32 FileSize;
+        }
+        //****************************************************************************
+        /// <summary>Directory structure for reading dirs</summary>
+        //****************************************************************************
+        public struct DirEntry
+        {
+            public string FileName;
+            public string FileName_Short;
+            public sFileInfo attrib;
+        }
+        //****************************************************************************
+        /// <summary>Directory structure for reading dirs</summary>
+        //****************************************************************************
+        public struct FullDirectory
+        {
+            public List<DirEntry> Files;
+            public int CurrentIndex;
+            public int Handle;
+        }
+
+        //****************************************************************************
+        /// <summary>MS DOS attribute bits</summary>
+        //****************************************************************************
+        enum eMSDOS_ATTRIB
+        {
+            ReadOnly = 1,
+            Hidden = 2,
+            System = 4,
+            Directory = 16,
+            Archive = 32
+        };
+
+
+
+        /// <summary>RST $08 disk commands</summary>
+        enum RST08
+        {
+            FMODE_READ = 0x01,
+            FMODE_WRITE = 0x02,
+            FMODE_OPEN = 0x00,
+            FMODE_OPEN_CREATE = 0x08,		// open if exists, else create
+            FMODE_CREATE = 0x04,			// create if doesn't exist, else error
+            FMODE_TRUNCATE = 0x0c,			// create and/or truncate
+
+
+            DISK_FILEMAP = 0x85,            // streaming get map start
+            DISK_STRMSTART = 0x86,          // streaming start
+            DISK_STRMEND = 0x87,            // streaming end
+
+            M_GETSETDRV = 0x89,
+            M_GETDATE = 0x8E,
+            F_OPEN = 0x9A,
+            F_CLOSE = 0x9B,
+            F_READ = 0x9D,
+            F_WRITE = 0x9E,
+            F_SEEK = 0x9F,
+            F_FSTAT = 0xA1,
+            F_STAT = 0xAC,
+            F_RENAME = 0xB0,
+
+            F_OPENDIR = 0xA3,
+            F_READ_DIR = 0xA4,
+            F_TELLDIR = 0xA5,
+            F_SEEKDIR = 0xA6,
+            F_REWINDDIR = 0xA7,
+            F_GETCWD = 0xA8,
+            F_CHDIR = 0xA9,
+            F_MKDIR = 0xAA,
+
+            // Not yet implemented
+            F_RMDIR = 0xAB
+
+        };
+
+        /// <summary>The current registers at RST $08 call time - updated upon return</summary>
+        Z80Regs regs;
+        /// <summary>The current drive</summary>
+        int CurrentDrive = 0;
+        /// <summary>Load the whole file into memory?</summary>
+        bool LoadFileIntoMemory = false;
+        /// <summary>Simple buffer for loading in data before poking into memory - could go direct in many cases</summary>
+        public byte[] filebuffer = new byte[65536];                    // buffer for reading in file
+        /// <summary>You can have upto 255 files open at once</summary>
+        public FileStream[] FileHandles = new FileStream[256];                         // Div MMC open file handles
+        /// <summary>The "up to" 255 file names that are open</summary>
+        public string[] FileNames = new string[256];
+        /// <summary>Used when the whole file is loaded into memory - not streamed</summary>
+        public byte[][] pFiles = new byte[256][];                               // Div MMC open files data?
+        /// <summary>File pointers for when the whole file is loaded into memory</summary>
+        public int[] FilePointers = new int[256];                        // file pointer....
+        /// <summary>File sizes for when the whole file is loaded into memory</summary>
+        public int[] FileSize = new int[256];
+        /// <summary>The current MMC card path</summary>
+        public string MMCPath = Environment.CurrentDirectory + "\\";
+        /// <summary>Current Directory, relative to the MMC path</summary>
+        public string CurrentDirectory = "";
+        /// <summary>Last folder access for caching of upper/lower casing of filenames</summary>
+        public string LastFolder = "";
+        /// <summary>Cached directory list of filenames</summary>
+        public string[] FindFiles = null;
+
+        /// <summary>Open directories</summary>
+        FullDirectory OpenedDirectory;
+        
+        // Streaming variables... this needs way more usage/testing
+
+        /// <summary>Are we in streaming mode?</summary>
+        public bool StreamEnabled = false;
+        /// <summary>$FF simulation between blocks</summary>
+        int StreamFFCount = 0;
+        /// <summary>Current SD card block that's been read</summary>
+        byte[] StreamBuffer = new byte[512];
+        /// <summary>The byte counter, starts at 512 and counts down</summary>
+        int StreamByteCount = -1;
+        /// <summary>The current counter into the StreamBuffer while streaming</summary>
+        int StreamByteIndex = 0;
+        /// <summary>The start block in the SD card - emulation starts at "0" as we're not in a card, this is still technically valid</summary>
+        int BlockStart = 0;
+        /// <summary>Number of 512 byte blocks we're streaming</summary>
+        int BlockCount = -1;
+
+
         public iCSpect CSpect;
+
+
+        // **********************************************************************
+        /// <summary>
+        ///     Get current directory
+        /// </summary>
+        // **********************************************************************
+        public string CurrentPath
+        {
+            get
+            {
+                string s = Path.Combine(MMCPath, CurrentDirectory);
+                // don't go "under" out path
+                if (s.Length < MMCPath.Length) s = MMCPath;
+
+                return s;
+            }
+        }
+
         // **********************************************************************
         /// <summary>
         ///     Init the RST 0x08 interface
@@ -66,6 +236,7 @@ namespace esxDOS
             }
             //ports.Add(new sIO("<ctrl><alt>c", 0, eAccess.KeyPress));                   // Key press callback
             ports.Add(new sIO(0xfe, eAccess.Port_Write));
+
             return ports;
         }
 
@@ -169,118 +340,6 @@ namespace esxDOS
         #endregion
 
 
-        public const int IM0 = 0;
-        public const int IM1 = 1;
-        public const int IM2 = 2;
-
-        /// <summary>Z80 CPU flag bits</summary>
-        [Flags]
-        public enum eCPUFlags : UInt16
-        {
-            None = 0x00,
-            C = 0x01,
-            N = 0x02,
-            PV = 0x04,
-            b3 = 0x08,
-            H = 0x10,
-            b5 = 0x20,
-            Z = 0x40,
-            S = 0x80
-        };
-
-
-
-        //****************************************************************************
-        /// <summary>File info</summary>
-        //****************************************************************************
-        public struct sFileInfo
-        {
-            public byte Attrib;
-            public UInt16 timestamp;
-            public UInt16 datestamp;
-            public UInt32 FileSize;
-        }
-        //****************************************************************************
-        /// <summary>MS DOS attribute bits</summary>
-        //****************************************************************************
-        enum eMSDOS_ATTRIB
-        {
-            ReadOnly = 1,
-            Hidden = 2,
-            System = 4,
-            Directory = 16,
-            Archive = 32
-        };
-
-
-
-        /// <summary>RST $08 disk commands</summary>
-        enum RST08
-        {
-            DISK_FILEMAP = 0x85,            // streaming get map start
-            DISK_STRMSTART = 0x86,          // streaming start
-            DISK_STRMEND = 0x87,            // streaming end
-
-            M_GETSETDRV = 0x89,
-            M_GETDATE = 0x8E,
-            F_OPEN = 0x9A,
-            F_CLOSE = 0x9B,
-            F_READ = 0x9D,
-            F_WRITE = 0x9E,
-            F_SEEK = 0x9F,
-            F_FSTAT = 0xA1,
-            F_STAT = 0xAC,
-            F_RENAME = 0xB0,
-
-            FMODE_READ = 0x01,
-            FMODE_WRITE = 0x02,
-            FMODE_OPEN = 0x00,
-            FMODE_OPEN_CREATE = 0x08,		// open if exists, else create
-            FMODE_CREATE = 0x04,			// create if doesn't exist, else error
-            FMODE_TRUNCATE = 0x0c			// create and/or truncate
-        };
-
-        /// <summary>The current registers at RST $08 call time - updated upon return</summary>
-        Z80Regs regs;
-        /// <summary>The current drive</summary>
-        int CurrentDrive = 0;
-        /// <summary>Load the whole file into memory?</summary>
-        bool LoadFileIntoMemory = false;
-        /// <summary>Simple buffer for loading in data before poking into memory - could go direct in many cases</summary>
-        public byte[] filebuffer = new byte[65536];                    // buffer for reading in file
-        /// <summary>You can have upto 255 files open at once</summary>
-        public FileStream[] FileHandles = new FileStream[256];                         // Div MMC open file handles
-        /// <summary>The "up to" 255 file names that are open</summary>
-        public string[] FileNames = new string[256];
-        /// <summary>Used when the whole file is loaded into memory - not streamed</summary>
-        public byte[][] pFiles = new byte[256][];                               // Div MMC open files data?
-        /// <summary>File pointers for when the whole file is loaded into memory</summary>
-        public int[] FilePointers = new int[256];                        // file pointer....
-        /// <summary>File sizes for when the whole file is loaded into memory</summary>
-        public int[] FileSize = new int[256];
-        /// <summary>The current MMC card path</summary>
-        public string MMCPath = Environment.CurrentDirectory + "\\";
-        /// <summary>Last folder access for caching of upper/lower casing of filenames</summary>
-        public string LastFolder = "";
-        /// <summary>Cached directory list of filenames</summary>
-        public string[] FindFiles = null;
-
-        // Streaming variables... this needs way more usage/testing
-        
-        /// <summary>Are we in streaming mode?</summary>
-        public bool StreamEnabled = false;
-        /// <summary>$FF simulation between blocks</summary>
-        int StreamFFCount = 0;
-        /// <summary>Current SD card block that's been read</summary>
-        byte[] StreamBuffer = new byte[512];
-        /// <summary>The byte counter, starts at 512 and counts down</summary>
-        int StreamByteCount = -1;
-        /// <summary>The current counter into the StreamBuffer while streaming</summary>
-        int StreamByteIndex = 0;
-        /// <summary>The start block in the SD card - emulation starts at "0" as we're not in a card, this is still technically valid</summary>
-        int BlockStart = 0;
-        /// <summary>Number of 512 byte blocks we're streaming</summary>
-        int BlockCount = -1;
 
         // ************************************************************************
         /// <summary>
@@ -397,7 +456,7 @@ namespace esxDOS
                 regs.A = 11;
                 return true;
             }
-            string OpenFileBuffer = MMCPath;    
+            string OpenFileBuffer = ""; // CurrentPath;    
             int len = OpenFileBuffer.Length;
             int len2 = len;
 
@@ -408,6 +467,8 @@ namespace esxDOS
                 if (c == 0x00) break;
                 OpenFileBuffer += (char)c;
             }
+
+            OpenFileBuffer = Path.Combine(CurrentPath, OpenFileBuffer);
 
             // make sure it's 8.3 format name - at most....
             bool verify = (bool) CSpect.GetGlobal(eGlobal.verify_EightDotThree);
@@ -763,9 +824,13 @@ namespace esxDOS
             info.timestamp = (UInt16)msdos_t;
             info.datestamp = (UInt16)msdos_date;
 
-            FileInfo fi = new FileInfo(_name);
-            info.FileSize = (UInt32)(fi.Length & 0xffffffff);
-
+            if(((int)att & (int)FileAttributes.Directory)==0)
+            {
+                FileInfo fi = new FileInfo(_name);
+                info.FileSize = (UInt32)(fi.Length & 0xffffffff);
+            }else{
+                info.FileSize = 0;
+            }
             return info;
         }
 
@@ -847,7 +912,7 @@ namespace esxDOS
 
             int add = regs.IX;
             int len = 0;
-            string name = MMCPath;
+            string name = CurrentPath;
             while (len < 1023)
             {
                 byte b = CSpect.Peek((UInt16)add++);
@@ -904,7 +969,7 @@ namespace esxDOS
 
 
             // get src name
-            string SrcFile = MMCPath;
+            string SrcFile = CurrentPath;
             int len = SrcFile.Length;
             int len2 = len;
             int add = regs.IX;
@@ -916,7 +981,7 @@ namespace esxDOS
             }
 
             // get dest name
-            string DestFile = MMCPath;
+            string DestFile = CurrentPath;
             len = DestFile.Length;
             len2 = len;
             add = regs.DE;
@@ -1193,6 +1258,415 @@ namespace esxDOS
             EndStream();
         }
 
+        //****************************************************************************
+        /// <summary>
+        ///     Get current working directory
+        /// </summary>
+        /// <remarks>
+        ///  Entry:
+        ///     A=drive, to obtain current working directory for that drive 
+        ///     or: A=$ff, to obtain working directory for a supplied filespec in DE
+        ///     DE=filespec(only if A=$ff)
+        ///     IX[HL from dot command]=buffer for null-terminated path
+        ///  Exit(success):
+        ///     Fc=0
+        ///  Exit(failure):
+        ///     Fc=1
+        ///     A=error code
+        /// </remarks>
+        //****************************************************************************
+        public bool GetCurrentDirectory()
+        {
+            int address = regs.IX;
+            for (int i=0;i<CurrentDirectory.Length;i++)
+            {
+                byte c = (byte)CurrentDirectory[i];
+                CSpect.Poke((UInt16)address++, c);
+            }
+            CSpect.Poke((UInt16)address++, 0x00);
+            return false;       // carry clear
+        }
+
+        //****************************************************************************
+        /// <summary>
+        ///     Open Directory
+        /// </summary>
+        /// <remarks>
+        ///  Entry:
+        ///      A=drive specifier(overridden if filespec includes a drive)
+        ///      IX[HL from dot command]=directory, null-terminated
+        ///      
+        ///      B=access mode - add together any or all of:
+        ///      $00 esx_mode_short_only F_READDIR returns short 8.3 names
+        ///      $10 esx_mode_lfn_only F_READDIR returns LFNs only
+        ///      $18 esx_mode_lfn_and_short F_READDIR returns LFN followed by 8.3 name
+        ///      (both null-terminated)
+        ///      $20 esx_mode_use_wildcards F_READDIR only returns entries matching
+        ///      wildcard
+        ///      $40 esx_mode_use_header F_READDIR additionally returns +3DOS header
+        ///      $80 esx_mode_sf_enable enable sort/filter mode in C
+        ///      
+        ///      C=sort/filter mode(if enabled in access mode) – add together:
+        ///      $80 esx_sf_exclude_files F_READDIR doesn't return files
+        ///      $40 esx_sf_exclude_dirs F_READDIR doesn't return directories
+        ///      $20 esx_sf_exclude_dots F_READDIR doesn't return . or .. directories
+        ///      $10 esx_sf_exclude_sys F_READDIR doesn’t return system/hidden files
+        ///      $08 esx_sf_sort_enable entries will be sorted
+        ///      (unless memory exhausted/BREAK pressed)
+        ///      $00 esx_sf_sort_lfn sort by LFN
+        ///      $01 esx_sf_sort_short sort by short name
+        ///      $02 esx_sf_sort_date sort by date/time(LFN breaks ties)
+        ///      $03 esx_sf_sort_size sort by file size(LFN breaks ties)
+        ///      $04 esx_sf_sort_reverse sort order is reversed
+        ///      
+        ///      DE=null-terminated wildcard string, if esx_mode_use_wildcards
+        ///      The same string must also be passed when calling F_READDIR, in case
+        ///      sorting is not possible and a fall back to unsorted mode is made.
+        ///  Exit(success):
+        ///      A=dir handle
+        ///      C=0 if sort operation not completed(out of memory/user pressed BREAK)
+        ///      C<>0 if sorting completed
+        ///      Fc=0
+        ///  Exit(failure):
+        ///      Fc=1
+        ///      A=error code
+        /// </remarks>
+        /// <returns>true for error, false for okay</returns>
+        //****************************************************************************
+        public bool OpenDirectory()
+        {
+            string[] dirs = Directory.GetDirectories(CurrentPath);
+            string[] files = Directory.GetFiles(CurrentPath);
+
+            string wildcard = "";
+            bool exclude_dirs = false;
+            bool exclude_files = false;
+            if ((regs.B & 0x80) != 0)
+            {
+                if ((regs.BC & 0x80) != 0) exclude_files = true;
+                if ((regs.BC & 0x40) != 0) exclude_dirs = true;
+            }
+            if ((regs.BC & 0x2000) != 0)
+            {
+                int max_len = 260;
+                int wadd = regs.DE;
+                while (max_len > 0)
+                {
+                    byte c = CSpect.Peek((ushort)wadd++);
+                    if (c == 0) break;
+                    wildcard += (char)c;
+                    max_len--;
+                }
+            }
+
+            List<DirEntry> entries = new List<DirEntry>();
+            if (!exclude_dirs)
+            {
+                // get parent folder date/time etc so we can use in "." and ".."
+                sFileInfo fo = GetFileInfo(Path.Combine(CurrentPath, ".."));
+
+                // Add "." and ".."
+                DirEntry e = new DirEntry();
+                e.FileName_Short = e.FileName = ".";
+                e.attrib = fo; 
+                entries.Add(e);
+
+                e = new DirEntry();
+                e.FileName_Short = e.FileName = "..";
+                e.attrib = fo;
+                entries.Add(e);
+
+                foreach (string dir in dirs)
+                {
+                    string d = Path.GetFullPath(dir);
+                    d = Path.GetFileName(d);
+                    e = new DirEntry();
+                    e.FileName = d;
+                    e.FileName_Short = d;
+                    e.attrib = GetFileInfo(Path.Combine(CurrentPath, d));
+
+                    entries.Add(e);
+                }
+            }
+            if (!exclude_files)
+            {
+                foreach (string file in files)
+                {
+                    string f = Path.GetFullPath(file);
+                    f = Path.GetFileName(f);
+                    DirEntry e = new DirEntry();
+                    e.FileName = f;
+                    e.FileName_Short = f;
+                    e.attrib = GetFileInfo(Path.Combine(CurrentPath, f));
+
+                    entries.Add(e);
+                }
+            }
+
+            OpenedDirectory = new FullDirectory();
+            OpenedDirectory.CurrentIndex = 0;
+            OpenedDirectory.Handle = 234;
+            OpenedDirectory.Files = entries;
+
+            regs.A = OpenedDirectory.Handle;
+            regs.C = 0;
+            return false;
+        }
+
+        //****************************************************************************
+        /// <summary>
+        ///     Read the next directory entry on an already opened directory
+        /// </summary>
+        /// <remarks>
+        ///   Entry:
+        ///     A=handle
+        ///     IX[HL from dot command]=buffer
+        ///     Additionally, if directory was opened with esx_mode_use_wildcards:
+        ///     DE=wildcard string (null-terminated)
+        ///  Exit(success):
+        ///     A=number of entries returned(0 or 1)
+        ///     If 0, there are no more entries
+        ///     Fc=0
+        ///   Exit(failure):
+        ///     Fc=1
+        ///     A=error code
+        ///  
+        ///   Buffer format:
+        ///   1 byte file attributes(MSDOS format)
+        ///   ? bytes file/directory name(s), null-terminated
+        ///   2 bytes timestamp(MSDOS format)
+        ///   2 bytes datestamp(MSDOS format)
+        ///   4 bytes file size
+        /// </remarks>
+        /// <returns>true for error, false for okay</returns>
+        //****************************************************************************
+        public bool ReadDirectoryEntry()
+        {
+            if (OpenedDirectory.Handle != regs.A)
+            {
+                regs.A = 255;
+                return true;
+            }
+            int curr = OpenedDirectory.CurrentIndex++;
+            if (curr >= OpenedDirectory.Files.Count)
+            {
+                regs.A = 0; // done
+                return false;
+            }
+
+            DirEntry d = OpenedDirectory.Files[curr];
+            string s = d.FileName;
+            if (s.Length > 260) s = s.Substring(0, 260);
+            int add = regs.IX;
+            CSpect.Poke((ushort)add++, (byte)d.attrib.Attrib);
+            for (int i = 0; i < s.Length; i++)
+            {
+                CSpect.Poke((ushort)add++, (byte)s[i]);
+            }
+            CSpect.Poke((ushort)add++, (byte)0);
+            CSpect.Poke((ushort)add++, (byte)(d.attrib.timestamp & 0xff));
+            CSpect.Poke((ushort)add++, (byte)((d.attrib.timestamp >> 8) & 0xff));
+            CSpect.Poke((ushort)add++, (byte)(d.attrib.datestamp & 0xff));
+            CSpect.Poke((ushort)add++, (byte)((d.attrib.datestamp >> 8) & 0xff));
+            CSpect.Poke((ushort)add++, (byte)(d.attrib.FileSize & 0xff));
+            CSpect.Poke((ushort)add++, (byte)((d.attrib.FileSize >> 8) & 0xff));
+            CSpect.Poke((ushort)add++, (byte)((d.attrib.FileSize >> 16) & 0xff));
+            CSpect.Poke((ushort)add++, (byte)((d.attrib.FileSize >> 24) & 0xff));
+
+            return false;
+        }
+
+        //****************************************************************************
+        /// <summary>
+        ///     Get the current index into a directory
+        /// </summary>
+        /// <remarks>
+        ///  Entry:
+        ///      A=handle
+        ///  Exit(success):
+        ///      BCDE=current offset in directory
+        ///      Fc=0
+        ///  Exit(failure):
+        ///      Fc=1
+        ///      A=error code
+        /// </remarks>
+        /// <returns>true for error, false for okay</returns>
+        //****************************************************************************
+        public bool GetDirectoryPosition()
+        {
+            if (OpenedDirectory.Handle != regs.A)
+            {
+                regs.A = 255;
+                return true;
+            }
+
+            regs.DE = (ushort) (OpenedDirectory.CurrentIndex & 0xffff);
+            regs.BC = (ushort) ((OpenedDirectory.CurrentIndex>>16) & 0xffff);
+            regs.A = 0;
+            return false;
+        }
+
+
+        //****************************************************************************
+        /// <summary>
+        ///     Get the current index into a directory
+        /// </summary>
+        /// <remarks>
+        ///  Entry:
+        ///      A=handle
+        ///      BCDE=current offset in directory  (as returned by F_TELLDIR)
+        ///  Exit(success):
+        ///      Fc=0
+        ///  Exit(failure):
+        ///      Fc=1
+        ///      A=error code
+        /// </remarks>
+        /// <returns>true for error, false for okay</returns>
+        //****************************************************************************
+        public bool SetDirectoryPosition()
+        {
+            if (OpenedDirectory.Handle != regs.A)
+            {
+                regs.A = 255;
+                return true;
+            }
+            OpenedDirectory.CurrentIndex = regs.DE | (((int)regs.BC) << 16);
+            if(OpenedDirectory.CurrentIndex>=OpenedDirectory.Files.Count)
+            {
+                OpenedDirectory.CurrentIndex = OpenedDirectory.Files.Count-1;
+            }
+            return false;
+        }
+
+        //****************************************************************************
+        /// <summary>
+        ///     Reset the current dir index to 0
+        /// </summary>
+        /// <remarks>
+        ///  Entry:
+        ///      A=handle
+        ///  Exit(success):
+        ///      Fc=0
+        ///  Exit(failure):
+        ///      Fc=1
+        ///      A=error code
+        /// </remarks>
+        /// <returns>true for error, false for okay</returns>
+        //****************************************************************************
+        public bool ResetDirectoryPosition()
+        {
+            if (OpenedDirectory.Handle != regs.A)
+            {
+                regs.A = 255;
+                return true;
+            }
+            OpenedDirectory.CurrentIndex = 0;
+            return false;
+        }
+
+
+        //****************************************************************************
+        /// <summary>
+        ///     Set the current directory
+        /// </summary>
+        /// <remarks>
+        /// Entry:
+        ///     A=drive specifier(overridden if filespec includes a drive)
+        ///     IX[HL from dot command]=path, null-terminated
+        /// Exit(success):
+        ///     Fc=0
+        /// Exit(failure):
+        ///     Fc=1
+        ///     A=error code
+        /// </remarks>
+        /// <returns>true for error, false for okay</returns>
+        //****************************************************************************
+        public bool SetCurrentDirectory()
+        {
+            if ((regs.A != CurrentDrive) && (regs.A != '*') && (regs.A != '$'))
+            {
+                regs.A = 11;
+                return true;
+            }
+
+            string dir = "";
+            int add = regs.IX;
+            int max_len = 260;
+            while (max_len>0)
+            {
+                byte b = CSpect.Peek((ushort)add++);
+                if (b == 0) break;
+                dir = dir + (char)b;
+
+                max_len--;
+            }
+            if(dir == ".")
+            {
+                regs.A = -1;
+                return true;
+            }
+
+            // Make sure we can't go "below" the root folder specified in MMC= command line
+            string p = CurrentDirectory;
+            CurrentDirectory = Path.Combine(CurrentDirectory, dir);
+            string s = Path.GetFullPath(CurrentPath);
+            if( !s.ToLower().Contains(MMCPath.ToLower()) )
+            {
+                CurrentDirectory = p;
+                regs.A = -1;
+                return true;
+            }else
+            {
+                CurrentDirectory = s.Substring(MMCPath.Length);
+                if(CurrentDirectory.StartsWith("\\") || CurrentDirectory.StartsWith("//"))
+                {
+                    CurrentDirectory = CurrentDirectory.Substring(1);
+                }
+            }
+            return false;
+        }
+
+
+        //****************************************************************************
+        /// <summary>
+        ///     Create directory (untested)
+        /// </summary>
+        /// <remarks>
+        /// Entry:
+        ///     A=drive specifier(overridden if filespec includes a drive)
+        ///     IX[HL from dot command]=path, null-terminated
+        /// Exit(success):
+        ///     Fc=0
+        /// Exit(failure):
+        ///     Fc=1
+        ///     A=error code
+        /// </remarks>
+        /// <returns></returns>
+        //****************************************************************************
+        public bool MakeDirectory()
+        {
+            string new_folder = "";
+            int max_len = 260;
+            int add = regs.IX;
+            while (max_len > 0)
+            {
+                byte c = CSpect.Peek((ushort)add++);
+                if (c == 0) break;
+                new_folder += (char)c;
+                max_len--;
+            }
+
+            try
+            {
+                Directory.CreateDirectory(new_folder);
+            }catch
+            {
+                regs.A = -2;
+                return true;
+            }
+            return false;
+        }
+
 
         //****************************************************************************
         /// <summary>
@@ -1210,15 +1684,20 @@ namespace esxDOS
 
             // get current MMC path
             MMCPath = (string) CSpect.GetGlobal(eGlobal.MMCPath);
+            if (MMCPath.EndsWith("\\") || MMCPath.EndsWith("/"))
+            {
+                MMCPath = MMCPath.Substring(0, MMCPath.Length - 1);
+            }
+            MMCPath = Path.GetFullPath(MMCPath);
 
             // Now do the actual commands
             switch ((RST08)FileOp)
             {
-                case RST08.DISK_FILEMAP:    setC( StreamFileMap() ); break;      // streaming get map start
-                case RST08.DISK_STRMSTART:  setC(StartStream()); break;        // streaming start
-                case RST08.DISK_STRMEND:    setC(EndStream()); break;          // streaming end
+                case RST08.DISK_FILEMAP:    setC( StreamFileMap() ); break;         // streaming get map start
+                case RST08.DISK_STRMSTART:  setC(StartStream()); break;             // streaming start
+                case RST08.DISK_STRMEND:    setC(EndStream()); break;               // streaming end
 
-                case RST08.M_GETSETDRV:     DoGetSetDrive(); setC(false); break;     // set default drive (random number really)
+                case RST08.M_GETSETDRV:     DoGetSetDrive(); setC(false); break;    // set default drive (random number really)
                 case RST08.F_OPEN:          setC(OpenRST8File()); break;
                 case RST08.F_READ:          setC(ReadRST8File()); break;
                 case RST08.F_WRITE:         setC(WriteRST8File()); break;
@@ -1228,6 +1707,16 @@ namespace esxDOS
                 case RST08.F_STAT:          setC(DoGetFileInfoString()); break;
                 case RST08.F_RENAME:        setC(RST08_Rename()); break;
                 case RST08.M_GETDATE:       setC(GetDateTime()); break;
+
+                case RST08.F_OPENDIR:       setC(OpenDirectory()); break;               // 0xA3
+                case RST08.F_READ_DIR:      setC(ReadDirectoryEntry()); break;          // 0xA4
+                case RST08.F_TELLDIR:       setC(GetDirectoryPosition()); break;        // 0xA5
+                case RST08.F_SEEKDIR:       setC(SetDirectoryPosition()); break;        // 0xA6
+                case RST08.F_REWINDDIR:     setC(ResetDirectoryPosition()); break;      // 0xA7
+                case RST08.F_GETCWD:        setC(GetCurrentDirectory()); break;         // 0xA8
+                case RST08.F_CHDIR:         setC(SetCurrentDirectory()); break;         // 0xA9
+                case RST08.F_MKDIR:         setC(MakeDirectory()); break;               // 0xAA
+                case RST08.F_RMDIR: break;
             }
             // send the registers back...
             CSpect.SetRegs(regs);

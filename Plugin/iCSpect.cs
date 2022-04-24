@@ -102,6 +102,12 @@ namespace Plugin
         FullScreen,
         /// <summary>HDMI mode timing? - returns bool</summary>
         hdmi_mode,
+        /// <summary>Is the .NEX divmmc address mapping over ride on?</summary>
+        div_mmc_mapping,
+        /// <summary>Is the "display" copper wait on?</summary>
+        copper_wait,
+        /// <summary>Is the "display" copper wait on?</summary>
+        irq_wait,
     }
 
 
@@ -351,5 +357,15 @@ namespace Plugin
         /// <param name="_item">The item</param>
         // ------------------------------------------------------------
         object GetGlobal(eGlobal _item);
+
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Set a global item/flag.
+        /// </summary>
+        /// <param name="_item">The item</param>
+        /// <param name="_value">The value to set - it MUST be the correct type</param>
+        // ------------------------------------------------------------
+        bool SetGlobal(eGlobal _item, object _value);
     }
 }
