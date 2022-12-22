@@ -1,13 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Plugin;
 
-namespace CopperDissassembler
+namespace Profiler
 {
     class WindowWrapper : IWin32Window
     {
@@ -25,15 +26,15 @@ namespace CopperDissassembler
 
     // *********************************************************************************************************
     /// <summary>
-    ///     The copper disassembler
+    ///     A Basic Profiler
     /// </summary>
     // *********************************************************************************************************
-    class CopperPlugin : iPlugin
+    class ProfilerPlugin : iPlugin
     {
         /// <summary>CSpect emulator interface</summary>
         iCSpect CSpect;
         public static bool Active;
-        public static CopperDissForm form;
+        public static ProfilerForm form;
         byte[] CopperMemory = new byte[2048];
         bool[] CopperIsWritten= new bool[1024];
 
@@ -49,7 +50,7 @@ namespace CopperDissassembler
         // *********************************************************************************************************
         public List<sIO> Init(iCSpect _CSpect)
         {
-            Debug.WriteLine("Copper Disassembler added");
+            Debug.WriteLine("Profiler added");
 
             CSpect = _CSpect;
             IntPtr handle = (IntPtr)CSpect.GetGlobal(eGlobal.window_handle);
@@ -57,8 +58,7 @@ namespace CopperDissassembler
 
             // Detect keypress for starting disassembler
             List<sIO> ports = new List<sIO>();
-            ports.Add(new sIO("<ctrl><alt>c", eAccess.KeyPress, 0));                   // Key press callback
-            ports.Add(new sIO("<ctrl><alt>s", eAccess.KeyPress, 1));                   // toggle copper/irq visualiser
+            ports.Add(new sIO("<ctrl><alt>p", eAccess.KeyPress, 0));                   // Key press callback
             return ports;
         }
 
@@ -76,16 +76,9 @@ namespace CopperDissassembler
             {
                 if (Active) return true;
                 Active = true;
-                form = new CopperDissForm(CopperMemory, CopperIsWritten);
-                form.Show(hwndWrapper);
-            }
-            else if (_id == 1)
-            {
-                // Toggle the copper wait and IRQ trigger visualiser
-                bool b = (bool)CSpect.GetGlobal(eGlobal.copper_wait);
-                bool i = (bool)CSpect.GetGlobal(eGlobal.irq_wait);
-                CSpect.SetGlobal(eGlobal.copper_wait, !b);
-                CSpect.SetGlobal(eGlobal.irq_wait, !i);
+                form = new ProfilerForm(CSpect);
+                form.Show();
+                return true;
             }
             return false;
         }
@@ -130,20 +123,13 @@ namespace CopperDissassembler
         // ******************************************************************************************
         public void Tick()
         {
-            if (!Active) return;
-
-            bool doinvalidate = false;
-            for (int i = 0; i < 2048; i++) {
-                byte b = CSpect.CopperRead(i);
-                if (CopperMemory[i] != b) doinvalidate = true;
-                CopperMemory[i] = b;
-            }
-            for (int i = 0; i < 2048; i+=2)
+            if (form != null)
             {
-                bool b = CSpect.CopperIsWritten(i);
-                CopperIsWritten[i>>1] = b;
+                //form.ProfileRead = (int[])CSpect.GetGlobal(eGlobal.profile_read);
+                //form.ProfileGroup.Invalidate(true);
+                //form.Invalidate(true);
+                //Application.DoEvents();
             }
-            if (doinvalidate) form.Invalidate();     // refresh IF it's changed
         }
 
         // ******************************************************************************************

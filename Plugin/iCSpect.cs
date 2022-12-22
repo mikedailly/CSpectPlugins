@@ -64,9 +64,9 @@ namespace Plugin
     // ********************************************************************************************************************************
     public enum eGlobal
     {
-        /// <summary>Is SD card 0 active?  returns bool</summary>
+        /// <summary>Is SD card 0 active?  returns bool (can't set)</summary>
         SDCardActive0,
-        /// <summary>Is SD card 1 active?  returns bool</summary>
+        /// <summary>Is SD card 1 active?  returns bool (can't set)/summary>
         SDCardActive1,
         /// <summary>Get the command line MMC path.  returns string</summary>
         MMCPath,
@@ -98,7 +98,7 @@ namespace Plugin
         _60Hz,
         /// <summary>VSync enabled? - returns bool</summary>
         vsync,
-        /// <summary>Start in fullscreen mode? - returns bool</summary>
+        /// <summary>Start in fullscreen mode? - returns bool (can't set)</summary>
         FullScreen,
         /// <summary>HDMI mode timing? - returns bool</summary>
         hdmi_mode,
@@ -108,9 +108,39 @@ namespace Plugin
         copper_wait,
         /// <summary>Is the "display" copper wait on?</summary>
         irq_wait,
+        /// <summary>Get the primary window handle (can't set)</summary>
+        window_handle,
+        /// <summary>Special file handle being passed on on .NEX loading read/write</summary>
+        file_handle,
+        /// <summary>Command line filename</summary>
+        file_name,
+        /// <summary>the next file handle (0 to 255)</summary>
+        next_file_handle,
+
+        /// <summary>2mb array holding profile information for reading at each memory location</summary>
+        profile_read,
+        /// <summary>2mb array holding profile information for writing at each memory location</summary>
+        profile_write,
+        /// <summary>2mb array holding profile information for executing at each memory location</summary>
+        profile_exe
     }
 
-
+    // ********************************************************************************************************************************
+    /// <summary>
+    ///     When you disassemble a line of assembly
+    /// </summary>
+    // ********************************************************************************************************************************
+    public class DissassemblyLine
+    {
+        /// <summary>The actual disassembly line</summary>
+        public string line;
+        /// <summary>The number of bytes this instruction takes up</summary>
+        public int bytes;
+        /// <summary>Number of primary TStates</summary>
+        public int TStates1;
+        /// <summary>Secondary TStates - uses when brances are taken</summary>
+        public int TStates2;
+    }
 
     // ********************************************************************************************************************************
     /// <summary>
@@ -303,6 +333,28 @@ namespace Plugin
         // ------------------------------------------------------------
         int Debugger(eDebugCommand _cmd, int _value = 0);
 
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Disassemble a memory address and return it
+        /// </summary>
+        /// <param name="_address">Address to disassemble</param>
+        /// <param name="_is24bit">Is this a 24bit address?</param>
+        /// <returns>
+        ///     Disassembly info
+        /// </returns>
+        // ------------------------------------------------------------
+        DissassemblyLine DissasembleMemory(int _address, bool _is24bit);
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Lookup a symbol
+        /// </summary>
+        /// <param name="_address">The 24bit address to lookup</param>
+        /// <returns>
+        ///     The string found - or ""
+        /// </returns>
+        // ------------------------------------------------------------
+        string LookUpSymbol(int _address);
 
         // ------------------------------------------------------------
         /// <summary>
@@ -358,7 +410,6 @@ namespace Plugin
         // ------------------------------------------------------------
         object GetGlobal(eGlobal _item);
 
-
         // ------------------------------------------------------------
         /// <summary>
         ///     Set a global item/flag.
@@ -367,5 +418,49 @@ namespace Plugin
         /// <param name="_value">The value to set - it MUST be the correct type</param>
         // ------------------------------------------------------------
         bool SetGlobal(eGlobal _item, object _value);
+
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Get a NEXT colour from the palette
+        ///         000 = ULA first palette
+        ///         100 = ULA second palette
+        ///         001 = Layer 2 first palette
+        ///         101 = Layer 2 second palette
+        ///         010 = Sprites first palette 
+        ///         110 = Sprites second palette
+        ///         011 = Tilemap first palette
+        ///         111 = Tilemap second palette
+        /// </summary>
+        /// <param name="_palette">The palette index (0 to 7)</param>
+        /// <param name="_index">The colour index (0-255)</param>
+        // ------------------------------------------------------------
+        uint GetColour(int _palette, int _index);
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Set a NEXT colour from the palette
+        ///         000 = ULA first palette
+        ///         100 = ULA second palette
+        ///         001 = Layer 2 first palette
+        ///         101 = Layer 2 second palette
+        ///         010 = Sprites first palette 
+        ///         110 = Sprites second palette
+        ///         011 = Tilemap first palette
+        ///         111 = Tilemap second palette
+        /// </summary>
+        /// <param name="_palette">The palette index (0 to 7)</param>
+        /// <param name="_index">The colour index (0-255)</param>
+        /// <param name="_value">The colour value (0-511)</param>
+        // ------------------------------------------------------------
+        void SetColour(int _palette, int _index, int _value);
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Gets the colours we actually DRAW with (what next colours MAP to)
+        /// </summary>
+        // ------------------------------------------------------------
+        uint[] Get32BITColours();
+
     }
 }

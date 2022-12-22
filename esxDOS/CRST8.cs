@@ -30,6 +30,9 @@ namespace esxDOS
     public class CRST8 : iPlugin
     {
         #region Plugin interface
+        /// <summary>Special ID passed in to pass a pre-opened filehandle and return a NEXT file handle</summary>
+        public const int ESXDOS_SETFILEHANDLE = unchecked((int)0xdeadc0de);
+
         public const int PC_Address = 0x08;
         public const int SDCard_Read_Port = 0xEb;
         public const int SDCard_Write_Port = 0xE7;
@@ -137,8 +140,10 @@ namespace esxDOS
             F_MKDIR = 0xAA,
 
             // Not yet implemented
-            F_RMDIR = 0xAB
+            F_RMDIR = 0xAB,
 
+            // Used to pass a file handle to the system
+            F_SPECIAL = 0xDF
         };
 
         /// <summary>The current registers at RST $08 call time - updated upon return</summary>
@@ -319,12 +324,21 @@ namespace esxDOS
 
             if (_type == eAccess.Memory_EXE && _port== PC_Address)
             {
-                int b = CSpect.GetNextRegister(0x50);
-                if (b != 255) return 0;
+                // special NEX loading mode
+                if (_id == ESXDOS_SETFILEHANDLE)
+                {
+                    SetFileHandle();
+                    _isvalid = true;
+                    return 0;
+                }
+                else{
+                    int b = CSpect.GetNextRegister(0x50);
+                    if (b != 255) return 0;
 
-                _isvalid = true;
-                DoFileOps();
-                return (byte)0;
+                    _isvalid = true;
+                    DoFileOps();
+                    return (byte)0;
+                }
             }
             else if ( _type == eAccess.Port_Read && (_port & 0xff) == 0xEb && port_e7 == 0xfe )
             {
@@ -748,12 +762,27 @@ namespace esxDOS
         }
 
         //****************************************************************************
-        //	Seek the RST $08 file
-        //	In:	_A = handle
-        //		L  = Seek kind (0 from start, 1 from current, 2 negative from current)
-        //		BCDE = offset to see (depending)
-        //	out:
-        //		BCDE = current file offset
+        /// <summary>
+        ///     Seek to position in file.
+        /// </summary>
+        /// <remarks>
+        ///     Entry:
+        ///         A=file handle
+        ///         BCDE=bytes to seek
+        ///         IXL[L from dot command]=seek mode:
+        ///             esx_seek_set $00 set the fileposition to BCDE
+        ///             esx_seek_fwd $01 add BCDE to the fileposition
+        ///             esx_seek_bwd $02 subtract BCDE from the fileposition
+        ///         Exit(success) :
+        ///             Fc=0
+        ///             BCDE=current position
+        ///         Exit(failure) :
+        ///             Fc=1
+        ///             A=error code
+        ///     NOTES:
+        ///         Attempts to seek past beginning/end of file leave BCDE=position=0/filesize
+        ///         respectively, with no error.
+        ///</remarks>
         //****************************************************************************
         bool SeekRST8File()
         {
@@ -769,7 +798,7 @@ namespace esxDOS
             if (handle == null) return true;
 
             long offset = (int)regs.DE | ((int)regs.BC << 16);
-            int seek_kind = regs.HL & 0xff;
+            int seek_kind = regs.IX & 0xff;
             switch (seek_kind)
             {
                 case 0: offset = (int)handle.Seek(offset, SeekOrigin.Begin); break;      // from start
@@ -1668,6 +1697,36 @@ namespace esxDOS
         }
 
 
+        //********************************************************************************************************************************************************
+        /// <summary>
+        ///     A .NEX file can request the file remain open. This file handle needs to be passed into the RST8 file system for management
+        /// </summary>
+        /// <returns>
+        ///     False for okay
+        ///     True for error
+        /// </returns>
+        //********************************************************************************************************************************************************
+        public bool SetFileHandle()
+        {
+            FileStream handle = (FileStream)CSpect.GetGlobal(eGlobal.file_handle);
+            string filename = (string)CSpect.GetGlobal(eGlobal.file_name);
+
+            int i = 1;
+            while (i < 256)
+            {
+                if (FileHandles[i] == null)
+                {
+                    FileHandles[i] = handle;
+                    FileNames[i] = filename;
+                    CSpect.SetGlobal(eGlobal.next_file_handle,i);
+                    return false;
+                }
+                i++;
+            }
+            return true;
+        }
+
+
         //****************************************************************************
         /// <summary>
         ///     Do open/read/write/close ops - pretend to be an MMC card 
@@ -1717,6 +1776,9 @@ namespace esxDOS
                 case RST08.F_CHDIR:         setC(SetCurrentDirectory()); break;         // 0xA9
                 case RST08.F_MKDIR:         setC(MakeDirectory()); break;               // 0xAA
                 case RST08.F_RMDIR: break;
+
+                case RST08.F_SPECIAL:       setC(SetFileHandle()); break;               // 0xAA
+
             }
             // send the registers back...
             CSpect.SetRegs(regs);

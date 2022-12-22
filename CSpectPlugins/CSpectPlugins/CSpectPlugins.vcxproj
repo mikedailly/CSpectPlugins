@@ -127,8 +127,14 @@
     <ProjectReference Include="..\..\i2C_Sample\i2C_Sample.csproj">
       <Project>{3db0374d-fb7d-4eb7-990a-2ba559a7e1ff}</Project>
     </ProjectReference>
+    <ProjectReference Include="..\..\NextRegisterViewer\NextRegisterViewer.csproj">
+      <Project>{0b9a399e-0d22-4a47-bf68-a8ec364be796}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\..\Plugin\Plugin.csproj">
       <Project>{192437a5-3030-4606-bb5a-2c86ece66aef}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\Profiler\Profiler.csproj">
+      <Project>{1dae17d0-f293-429c-9bc8-061d55a8f746}</Project>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
