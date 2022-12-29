@@ -124,6 +124,9 @@
     <ProjectReference Include="..\..\esxDOS\esxDOS.csproj">
       <Project>{b93cbdd5-a736-43a5-bbe4-4f0cd9bc5993}</Project>
     </ProjectReference>
+    <ProjectReference Include="..\..\FileAssociate\FileAssociate.csproj">
+      <Project>{7fbc889d-403d-4477-998b-a1e51455d6de}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\..\i2C_Sample\i2C_Sample.csproj">
       <Project>{3db0374d-fb7d-4eb7-990a-2ba559a7e1ff}</Project>
     </ProjectReference>

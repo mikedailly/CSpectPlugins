@@ -19,6 +19,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NextRegisterViewer", "..\Ne
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Profiler", "..\Profiler\Profiler.csproj", "{1DAE17D0-F293-429C-9BC8-061D55A8F746}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FileAssociate", "..\FileAssociate\FileAssociate.csproj", "{7FBC889D-403D-4477-998B-A1E51455D6DE}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -123,6 +125,18 @@ Global
 		{1DAE17D0-F293-429C-9BC8-061D55A8F746}.Release|x64.Build.0 = Release|Any CPU
 		{1DAE17D0-F293-429C-9BC8-061D55A8F746}.Release|x86.ActiveCfg = Release|Any CPU
 		{1DAE17D0-F293-429C-9BC8-061D55A8F746}.Release|x86.Build.0 = Release|Any CPU
+		{7FBC889D-403D-4477-998B-A1E51455D6DE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7FBC889D-403D-4477-998B-A1E51455D6DE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7FBC889D-403D-4477-998B-A1E51455D6DE}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{7FBC889D-403D-4477-998B-A1E51455D6DE}.Debug|x64.Build.0 = Debug|Any CPU
+		{7FBC889D-403D-4477-998B-A1E51455D6DE}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{7FBC889D-403D-4477-998B-A1E51455D6DE}.Debug|x86.Build.0 = Debug|Any CPU
+		{7FBC889D-403D-4477-998B-A1E51455D6DE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7FBC889D-403D-4477-998B-A1E51455D6DE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7FBC889D-403D-4477-998B-A1E51455D6DE}.Release|x64.ActiveCfg = Release|Any CPU
+		{7FBC889D-403D-4477-998B-A1E51455D6DE}.Release|x64.Build.0 = Release|Any CPU
+		{7FBC889D-403D-4477-998B-A1E51455D6DE}.Release|x86.ActiveCfg = Release|Any CPU
+		{7FBC889D-403D-4477-998B-A1E51455D6DE}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
