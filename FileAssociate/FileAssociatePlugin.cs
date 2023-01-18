@@ -17,6 +17,7 @@ namespace FileAssociate
     {
         /// <summary>CSpect emulator interface</summary>
         iCSpect CSpect;
+        bool DoFileAssociate = false;
 
         // *********************************************************************************************************
         /// <summary>
@@ -55,10 +56,9 @@ namespace FileAssociate
         {
             if (_id == 0)
             {
-                RegFunctions r = new RegFunctions();
-                r.EnsureAssociationsSet();
+                DoFileAssociate = true;
             }
-            return false;
+            return true;
         }
 
         // ******************************************************************************************
@@ -102,6 +102,23 @@ namespace FileAssociate
         public void Tick()
         {
         }
+
+
+        // ******************************************************************************************
+        /// <summary>
+        ///     Called once an OS emulator frame - do all UI rendering, opening windows etc here.
+        /// </summary>
+        // ******************************************************************************************
+        public void OSTick()
+        {
+            if(DoFileAssociate)
+            {
+                DoFileAssociate = false;
+                RegFunctions r = new RegFunctions();
+                r.EnsureAssociationsSet();
+            }
+        }
+
 
         // ******************************************************************************************
         /// <summary>

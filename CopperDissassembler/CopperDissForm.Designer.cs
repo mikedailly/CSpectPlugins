@@ -50,12 +50,12 @@
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(287, 615);
             this.Controls.Add(this.vAddressScrollBar);
+            this.DoubleBuffered = true;
             this.Name = "CopperDissForm";
             this.Text = "Copper Disassembler";
             this.FormClosed += new System.Windows.Forms.FormClosedEventHandler(this.CopperDissForm_FormClosed);
             this.Load += new System.EventHandler(this.Form1_Load);
             this.ResizeEnd += new System.EventHandler(this.CopperDissForm_ResizeEnd);
-            this.Paint += new System.Windows.Forms.PaintEventHandler(this.CopperDissForm_Paint);
             this.ResumeLayout(false);
 
         }

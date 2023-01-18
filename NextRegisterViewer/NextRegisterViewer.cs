@@ -41,6 +41,7 @@ namespace NextRegisterViewer
         public RegDetails Regs;
 
         bool doInvalidate = false;
+        bool OpenNextRegWindow = false;
 
         WindowWrapper hwndWrapper;
         // *********************************************************************************************************
@@ -81,13 +82,9 @@ namespace NextRegisterViewer
         // ******************************************************************************************
         public bool KeyPressed(int _id)
         {
-
             if (_id == 0)
             {
-                if (Active) return true;
-                Active = true;
-                form = new NextRegistersForm(Regs, CSpect);
-                form.Show();
+                OpenNextRegWindow = true;
             }            
             return false;
         }
@@ -145,12 +142,38 @@ namespace NextRegisterViewer
                     }
                 }
             }
-
-            if (doInvalidate) form.Invalidate();     // refresh IF it's changed
-            Application.DoEvents();
-
-            doInvalidate = false;
         }
+
+        // ******************************************************************************************
+        /// <summary>
+        ///     Called once an OS emulator frame - do all UI rendering, opening windows etc here.
+        /// </summary>
+        // ******************************************************************************************
+        public void OSTick()
+        {
+            if (OpenNextRegWindow)
+            {
+                if (!Active)
+                {
+                    Active = true;
+                    form = new NextRegistersForm(Regs, CSpect);
+                    form.Show();
+                }
+                OpenNextRegWindow = false;
+            }
+
+
+            if (doInvalidate)
+            {
+                if (form != null)
+                {
+                    form.Invalidate();     // refresh IF it's changed
+                    Application.DoEvents();
+                }
+                doInvalidate = false;
+            }
+        }
+
 
         // ******************************************************************************************
         /// <summary>

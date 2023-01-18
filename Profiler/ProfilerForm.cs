@@ -251,6 +251,7 @@ namespace Profiler
         {
             if (e.Button == MouseButtons.Right)
             {
+                if (BlockAdd == null) return;
                 MouseX = MouseButX_Start = e.X;
                 MouseY = MouseButY_Start = e.Y;
                 if (MouseX < 0) return;
@@ -265,6 +266,8 @@ namespace Profiler
             {
                 int AddMouseX = e.X - PROF_X_START;
                 if (AddMouseX > BlockAdd.Length) return;
+                if (AddMouseX < 0) AddMouseX = 0;
+                if (AddMouseX >= BlockAdd.Length) AddMouseX = BlockAdd.Length - 1;
                 DissStart = BlockAdd[AddMouseX];
                 DoInvalidate();
                 ShowDisassembly = true;
@@ -471,6 +474,8 @@ namespace Profiler
             index = (int) Math.Ceiling(index / CellSize);
             if (index >= Blocks.Length) return null;
 
+            if (index < 0) index = 0;
+            if (index >= Blocks.Length) index = Blocks.Length - 1;
             int prof = Blocks[index];
             double scaler = 200.0 / max_value;
             double d = prof * scaler;

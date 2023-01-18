@@ -38,6 +38,8 @@ namespace Profiler
         byte[] CopperMemory = new byte[2048];
         bool[] CopperIsWritten= new bool[1024];
 
+        bool OpenProfiler = false;
+
         WindowWrapper hwndWrapper;
         // *********************************************************************************************************
         /// <summary>
@@ -74,10 +76,7 @@ namespace Profiler
 
             if (_id == 0)
             {
-                if (Active) return true;
-                Active = true;
-                form = new ProfilerForm(CSpect);
-                form.Show();
+                OpenProfiler = true;
                 return true;
             }
             return false;
@@ -131,6 +130,27 @@ namespace Profiler
                 //Application.DoEvents();
             }
         }
+
+        // ******************************************************************************************
+        /// <summary>
+        ///     Called once an OS emulator frame - do all UI rendering, opening windows etc here.
+        /// </summary>
+        // ******************************************************************************************
+        public void OSTick()
+        {
+            if (OpenProfiler)
+            {
+                OpenProfiler = false;
+                if (!Active)
+                {
+                    Active = true;
+                    form = new ProfilerForm(CSpect);
+                    form.Show();
+                }
+            }
+        }
+
+
 
         // ******************************************************************************************
         /// <summary>

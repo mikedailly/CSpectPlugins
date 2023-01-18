@@ -60,6 +60,41 @@ namespace esxDOS
         };
 
 
+        enum eFileAccessMode
+        {
+            /// <summary>F_READDIR returns short 8.3 names</summary>
+            esx_mode_short_only = 0x00,
+            /// <summary>F_READDIR returns LFNs only</summary>
+            esx_mode_lfn_only = 0x10,
+            /// <summary>F_READDIR returns LFN followed by 8.3 name(both null-terminated)</summary>
+            esx_mode_lfn_and_short = 0x18,
+            /// <summary>F_READDIR only returns entries matching wildcard</summary>
+            esx_mode_use_wildcards = 0x20,
+            /// <summary>F_READDIR additionally returns +3DOS header</summary>
+            esx_mode_use_header = 0x40,
+            /// <summary>enable sort/filter mode in C</summary>
+            esx_mode_sf_enable = 0x80,
+            /// <summary>F_READDIR doesn't return files</summary>
+            esx_sf_exclude_files = 0x80,
+            /// <summary>F_READDIR doesn't return directories</summary>
+            esx_sf_exclude_dirs = 0x40,
+            /// <summary>F_READDIR doesn't return . or .. directories</summary>
+            esx_sf_exclude_dots = 0x20,
+            /// <summary>F_READDIR doesn’t return system/hidden files</summary>
+            esx_sf_exclude_sys = 0x10,
+            /// <summary>entries will be sorted (unless memory exhausted/BREAK pressed)</summary>
+            esx_sf_sort_enable = 0x08,
+            /// <summary>sort by LFN</summary>
+            esx_sf_sort_lfn = 0x00,
+            /// <summary>sort by short name</summary>
+            esx_sf_sort_short = 0x01,
+            /// <summary>sort by date/time(LFN breaks ties)</summary>
+            esx_sf_sort_date = 0x02,
+            /// <summary>ort by file size(LFN breaks ties)</summary>
+            esx_sf_sort_size = 0x03,
+            /// <summary>sort order is reversed</summary>
+            esx_sf_sort_reverse = 0x04
+        };
 
         //****************************************************************************
         /// <summary>File info</summary>
@@ -270,6 +305,16 @@ namespace esxDOS
         /// </summary>
         // **********************************************************************
         public void Tick()
+        {
+        }
+
+
+        // ******************************************************************************************
+        /// <summary>
+        ///     Called once an OS emulator frame - do all UI rendering, opening windows etc here.
+        /// </summary>
+        // ******************************************************************************************
+        public void OSTick()
         {
         }
 
@@ -672,6 +717,7 @@ namespace esxDOS
                 try
                 {
                     val = FileHandles[regs.A].Read(filebuffer, 0, size);  //_read(handle, &(filebuffer[0]), size);
+                    size = val;
                 }
                 catch
                 {
@@ -1316,6 +1362,8 @@ namespace esxDOS
             return false;       // carry clear
         }
 
+
+
         //****************************************************************************
         /// <summary>
         ///     Open Directory
@@ -1364,9 +1412,6 @@ namespace esxDOS
         //****************************************************************************
         public bool OpenDirectory()
         {
-            string[] dirs = Directory.GetDirectories(CurrentPath);
-            string[] files = Directory.GetFiles(CurrentPath);
-
             string wildcard = "";
             bool exclude_dirs = false;
             bool exclude_files = false;
@@ -1375,6 +1420,7 @@ namespace esxDOS
                 if ((regs.BC & 0x80) != 0) exclude_files = true;
                 if ((regs.BC & 0x40) != 0) exclude_dirs = true;
             }
+
             if ((regs.BC & 0x2000) != 0)
             {
                 int max_len = 260;
@@ -1386,7 +1432,17 @@ namespace esxDOS
                     wildcard += (char)c;
                     max_len--;
                 }
+                if (wildcard == "") wildcard = "*";
             }
+            else
+            {
+                wildcard = "*";
+            }
+
+
+            string[] dirs = Directory.GetDirectories(CurrentPath);
+            string[] files = Directory.GetFiles(CurrentPath, wildcard);
+
 
             List<DirEntry> entries = new List<DirEntry>();
             if (!exclude_dirs)

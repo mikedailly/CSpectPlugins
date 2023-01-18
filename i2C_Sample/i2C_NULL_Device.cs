@@ -41,7 +41,12 @@ namespace i2C_Sample
             ports.Add(new sIO(PORT_DATA, eAccess.Port_Read));
             ports.Add(new sIO(PORT_CLOCK, eAccess.Port_Write));
             ports.Add(new sIO(PORT_DATA, eAccess.Port_Write));
-            ports.Add(new sIO(0xfe, eAccess.Port_Write, 12));
+            
+            // Allow stopping on port 0xFE write
+            //for (int i = 0; i < 65534; i += 2)
+            //{
+            //    ports.Add(new sIO(i, eAccess.Port_Write, 12));
+            //}
             return ports;
         }
 
@@ -89,6 +94,16 @@ namespace i2C_Sample
             */
         }
 
+
+        // ******************************************************************************************
+        /// <summary>
+        ///     Called once an OS emulator frame - do all UI rendering, opening windows etc here.
+        /// </summary>
+        // ******************************************************************************************
+        public void OSTick()
+        {
+        }
+
         // **********************************************************************
         /// <summary>
         ///     Key press callback
@@ -118,9 +133,10 @@ namespace i2C_Sample
         // **********************************************************************
         public bool Write(eAccess _type, int _port, int _id, byte _value)
         {
-            //if (_type == eAccess.Port_Write && _port == 0xfe)
+            //if (_type == eAccess.Port_Write && (_port&0x1) == 0x00)
             //{
-            //    return true;
+            //    CSpect.Debugger(eDebugCommand.Enter);
+            //    return false;
             //}
 
 

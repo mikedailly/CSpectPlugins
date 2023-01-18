@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -36,6 +37,9 @@ namespace CopperDissassembler
         public static CopperDissForm form;
         byte[] CopperMemory = new byte[2048];
         bool[] CopperIsWritten= new bool[1024];
+
+        bool doinvalidate = false;
+        bool OpenCopperWindow = false;
 
         WindowWrapper hwndWrapper;
         // *********************************************************************************************************
@@ -74,10 +78,7 @@ namespace CopperDissassembler
 
             if (_id == 0)
             {
-                if (Active) return true;
-                Active = true;
-                form = new CopperDissForm(CopperMemory, CopperIsWritten);
-                form.Show(hwndWrapper);
+                OpenCopperWindow = true;
             }
             else if (_id == 1)
             {
@@ -132,7 +133,6 @@ namespace CopperDissassembler
         {
             if (!Active) return;
 
-            bool doinvalidate = false;
             for (int i = 0; i < 2048; i++) {
                 byte b = CSpect.CopperRead(i);
                 if (CopperMemory[i] != b) doinvalidate = true;
@@ -143,7 +143,34 @@ namespace CopperDissassembler
                 bool b = CSpect.CopperIsWritten(i);
                 CopperIsWritten[i>>1] = b;
             }
-            if (doinvalidate) form.Invalidate();     // refresh IF it's changed
+
+        }
+
+
+        // ******************************************************************************************
+        /// <summary>
+        ///     Called once an OS emulator frame - do all UI rendering, opening windows etc here.
+        /// </summary>
+        // ******************************************************************************************
+        public void OSTick()
+        {
+            if (OpenCopperWindow)
+            {
+                if (!Active)
+                {
+                    Active = true;
+                    form = new CopperDissForm(CopperMemory, CopperIsWritten);
+                    form.Show();
+                }
+                OpenCopperWindow = false;
+            }
+
+            if (doinvalidate)
+            {
+                form.Invalidate();     // refresh IF it's changed
+                Application.DoEvents();
+                doinvalidate = false;
+            }
         }
 
         // ******************************************************************************************

@@ -11,14 +11,7 @@
 //
 // ********************************************************************************************************************************************
 using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
 using System.Drawing;
-using System.Linq;
-using System.Reflection;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace CopperDissassembler
@@ -41,6 +34,7 @@ namespace CopperDissassembler
         /// <summary>Number of visible lines if text</summary>
         int visible_lines;
 
+        bool first_time = true;
         // ******************************************************************************************
         /// <summary>
         ///     Create copper disassembler
@@ -55,7 +49,10 @@ namespace CopperDissassembler
 
             InitializeComponent();
 
-            this.DoubleBuffered = true;
+            this.Paint += new System.Windows.Forms.PaintEventHandler(CopperDissForm_Paint);
+            this.Refresh();
+            this.Invalidate(true);
+            Application.DoEvents();
         }
 
         // ******************************************************************************************
@@ -77,10 +74,13 @@ namespace CopperDissassembler
         // ******************************************************************************************
         void CreateFont()
         {
+            if (!first_time) return;
+
             drawFont = new System.Drawing.Font("Arial", 12);
             drawBrush = new System.Drawing.SolidBrush(System.Drawing.Color.Black);
             drawRedBrush = new System.Drawing.SolidBrush(System.Drawing.Color.Red);
             visible_lines = ((this.ClientSize.Height / drawFont.Height) * 2);
+            first_time = false;
         }
 
 
@@ -153,9 +153,6 @@ namespace CopperDissassembler
                 Address += 2;
                 y += h;
             }
-
-            drawFont.Dispose();
-            drawBrush.Dispose();
         }
 
         // ******************************************************************************************
