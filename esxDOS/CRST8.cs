@@ -1415,10 +1415,23 @@ namespace esxDOS
             string wildcard = "";
             bool exclude_dirs = false;
             bool exclude_files = false;
+            bool sort_enabled = false;
+            bool sort_sfn = false;			// false = lfn
+            bool sort_reversed = false;
+
             if ((regs.B & 0x80) != 0)
             {
                 if ((regs.BC & 0x80) != 0) exclude_files = true;
                 if ((regs.BC & 0x40) != 0) exclude_dirs = true;
+            }
+
+            if ((regs.C & 0x08) != 0)
+            {
+                sort_enabled = true;
+                if ((regs.C & 0x01) != 0)
+                    sort_sfn = true;
+                if ((regs.C & 0x04) != 0)
+					sort_reversed = true;
             }
 
             if ((regs.BC & 0x2000) != 0)
@@ -1428,7 +1441,7 @@ namespace esxDOS
                 while (max_len > 0)
                 {
                     byte c = CSpect.Peek((ushort)wadd++);
-                    if (c == 0) break;
+				if (c == 0) break;
                     wildcard += (char)c;
                     max_len--;
                 }
@@ -1487,6 +1500,24 @@ namespace esxDOS
                     entries.Add(e);
                 }
             }
+
+			if (sort_enabled)
+			{
+				if (!sort_sfn)
+				{
+					if (!sort_reversed)
+						entries.Sort((x, y) => x.FileName.CompareTo(y.FileName));
+					else
+						entries.Sort((x, y) => y.FileName.CompareTo(x.FileName));
+				}
+				else
+				{
+					if (!sort_reversed)
+						entries.Sort((x, y) => x.FileName.CompareTo(y.FileName_Short));
+					else
+						entries.Sort((x, y) => y.FileName.CompareTo(x.FileName_Short));
+				}
+			}
 
             OpenedDirectory = new FullDirectory();
             OpenedDirectory.CurrentIndex = 0;
