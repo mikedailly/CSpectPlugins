@@ -1427,11 +1427,10 @@ namespace esxDOS
 
             if ((regs.C & 0x08) != 0)
             {
-                sort_enabled = true;
-                if ((regs.C & 0x01) != 0)
-                    sort_sfn = true;
-                if ((regs.C & 0x04) != 0)
-					sort_reversed = true;
+				sort_enabled = true;
+
+				if ((regs.C & 0x01) != 0) sort_sfn = true;
+				if ((regs.C & 0x04) != 0) sort_reversed = true;
             }
 
             if ((regs.BC & 0x2000) != 0)
@@ -1451,7 +1450,6 @@ namespace esxDOS
             {
                 wildcard = "*";
             }
-
 
             string[] dirs = Directory.GetDirectories(CurrentPath);
             string[] files = Directory.GetFiles(CurrentPath, wildcard);
@@ -1506,16 +1504,24 @@ namespace esxDOS
 				if (!sort_sfn)
 				{
 					if (!sort_reversed)
+					{ 
 						entries.Sort((x, y) => x.FileName.CompareTo(y.FileName));
+					}
 					else
+					{
 						entries.Sort((x, y) => y.FileName.CompareTo(x.FileName));
+					}
 				}
 				else
 				{
 					if (!sort_reversed)
+					{
 						entries.Sort((x, y) => x.FileName.CompareTo(y.FileName_Short));
+					}
 					else
+					{
 						entries.Sort((x, y) => y.FileName.CompareTo(x.FileName_Short));
+					}
 				}
 			}
 
