@@ -3,7 +3,7 @@
 //      Written by:
 //                  Mike Dailly
 //      contributions by:
-//                  
+//                  Mike Flash Ware
 //      Released under the GNU 3 license - please see license file for more details
 //
 //      This extension uses the EXE extension method and traps trying to execute an instruction at RST $08,
@@ -114,6 +114,8 @@ namespace esxDOS
             public string FileName;
             public string FileName_Short;
             public sFileInfo attrib;
+            public DateTime Datestamp;
+            public UInt32 FileSize;
         }
         //****************************************************************************
         /// <summary>Directory structure for reading dirs</summary>
@@ -1427,11 +1429,10 @@ namespace esxDOS
 
             if ((regs.C & 0x08) != 0)
             {
-                sort_enabled = true;
-                if ((regs.C & 0x01) != 0)
-                    sort_sfn = true;
-                if ((regs.C & 0x04) != 0)
-					sort_reversed = true;
+				sort_enabled = true;
+
+				if ((regs.C & 0x01) != 0) sort_sfn = true;
+				if ((regs.C & 0x04) != 0) sort_reversed = true;
             }
 
             if ((regs.BC & 0x2000) != 0)
@@ -1451,7 +1452,6 @@ namespace esxDOS
             {
                 wildcard = "*";
             }
-
 
             string[] dirs = Directory.GetDirectories(CurrentPath);
             string[] files = Directory.GetFiles(CurrentPath, wildcard);
@@ -1481,6 +1481,8 @@ namespace esxDOS
                     e = new DirEntry();
                     e.FileName = d;
                     e.FileName_Short = d;
+					e.Datestamp = new FileInfo(Path.Combine(CurrentPath, d)).CreationTime;
+					e.FileSize = 0;
                     e.attrib = GetFileInfo(Path.Combine(CurrentPath, d));
 
                     entries.Add(e);
@@ -1495,27 +1497,40 @@ namespace esxDOS
                     DirEntry e = new DirEntry();
                     e.FileName = f;
                     e.FileName_Short = f;
+					e.Datestamp = new FileInfo(Path.Combine(CurrentPath, f)).CreationTime;
+					e.FileSize = (uint) new FileInfo(Path.Combine(CurrentPath, f)).Length;
                     e.attrib = GetFileInfo(Path.Combine(CurrentPath, f));
 
                     entries.Add(e);
                 }
             }
 
+//			entries.Sort((x, y) => x.FileSize.CompareTo(y.FileSize));
+//			entries.Sort((x, y) => x.Datestamp.CompareTo(y.Datestamp));
+
 			if (sort_enabled)
 			{
 				if (!sort_sfn)
 				{
 					if (!sort_reversed)
+					{ 
 						entries.Sort((x, y) => x.FileName.CompareTo(y.FileName));
+					}
 					else
+					{
 						entries.Sort((x, y) => y.FileName.CompareTo(x.FileName));
+					}
 				}
 				else
 				{
 					if (!sort_reversed)
+					{
 						entries.Sort((x, y) => x.FileName.CompareTo(y.FileName_Short));
+					}
 					else
+					{
 						entries.Sort((x, y) => y.FileName.CompareTo(x.FileName_Short));
+					}
 				}
 			}
 
