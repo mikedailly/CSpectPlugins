@@ -39,9 +39,6 @@
     <Reference Include="System.Data" />
     <Reference Include="System.Net.Http" />
     <Reference Include="System.Xml" />
-    <Reference Include="Plugin">
-      <HintPath>..\Plugin\bin\Debug\Plugin.dll</HintPath>
-    </Reference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Main.cs" />
@@ -56,6 +53,12 @@
     <None Include="License.md" />
     <None Include="DeZogPlugin.dll.config" />
     <None Include="Changelog.md" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Plugin\Plugin.csproj">
+      <Project>{192437a5-3030-4606-bb5a-2c86ece66aef}</Project>
+      <Name>Plugin</Name>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
