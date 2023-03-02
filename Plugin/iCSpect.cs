@@ -116,6 +116,10 @@ namespace Plugin
         file_name,
         /// <summary>the next file handle (0 to 255)</summary>
         next_file_handle,
+        /// <summary>What LOW ROM is paged in ($0000-$1fff)</summary>
+        low_rom,
+        /// <summary>What HIGH ROM is paged in ($2000-$3fff)</summary>
+        high_rom,
 
         /// <summary>2mb array holding profile information for reading at each memory location</summary>
         profile_read,
@@ -123,6 +127,77 @@ namespace Plugin
         profile_write,
         /// <summary>2mb array holding profile information for executing at each memory location</summary>
         profile_exe
+    }
+
+    // ********************************************************************************************************************************
+    /// <summary>
+    ///     What rom is currently paged in (what does the CPU "see")
+    /// </summary>
+    // ********************************************************************************************************************************
+    public enum eRom
+    {
+        /// <summary>48k rom paged in</summary>
+        zx48k,
+        /// <summary>128k rom paged in</summary>
+        zx128k,
+        /// <summary>NEXT rom 0 paged in</summary>
+        zxnext0,
+        /// <summary>NEXT rom 1 paged in</summary>
+        zxnext1,
+        /// <summary>NEXT rom 2 paged in</summary>
+        zxnext2,
+        /// <summary>NEXT rom 3 paged in</summary>
+        zxnext3,
+        /// <summary>multiface paged in($0000-$3FFF)</summary>
+        multiface,
+        /// <summary>DivMMC paged in($0000-$3FFF)</summary>
+        divmmc,
+        /// <summary>ALT ROM paged in, low 16k of 32k ROM</summary>
+        altrom_low,
+        /// <summary>ALT ROM paged in, high 16k of 32k ROM</summary>
+        altrom_high,
+
+
+        /// <summary>RAM is paged in</summary>
+        ram,
+        /// <summary>multiface RAM in ($2000-$3FFF)</summary>
+        multiface_ram,
+        /// <summary>DivMMC RAM in ($2000-$3FFF)</summary>
+        divmmc_ram,
+        /// <summary>layer2 READ mode is paged in</summary>
+        layer2,
+        /// <summary>DivMMC RAM.</summary>
+        mmc_ram0,
+        /// <summary>DivMMC RAM.</summary>
+        mmc_ram1,
+        /// <summary>DivMMC RAM.</summary>
+        mmc_ram2,
+        /// <summary>DivMMC RAM.</summary>
+        mmc_ram3,
+        /// <summary>DivMMC RAM.</summary>
+        mmc_ram4,
+        /// <summary>DivMMC RAM.</summary>
+        mmc_ram5,
+        /// <summary>DivMMC RAM.</summary>
+        mmc_ram6,
+        /// <summary>DivMMC RAM.</summary>
+        mmc_ram7,
+        /// <summary>DivMMC RAM.</summary>
+        mmc_ram8,
+        /// <summary>DivMMC RAM.</summary>
+        mmc_ram9,
+        /// <summary>DivMMC RAM.</summary>
+        mmc_ram10,
+        /// <summary>DivMMC RAM.</summary>
+        mmc_ram11,
+        /// <summary>DivMMC RAM.</summary>
+        mmc_ram12,
+        /// <summary>DivMMC RAM.</summary>
+        mmc_ram13,
+        /// <summary>DivMMC RAM.</summary>
+        mmc_ram14,
+        /// <summary>DivMMC RAM.</summary>
+        mmc_ram15,
     }
 
     // ********************************************************************************************************************************
@@ -461,6 +536,16 @@ namespace Plugin
         /// </summary>
         // ------------------------------------------------------------
         uint[] Get32BITColours();
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Load a file from an SD card, or relative MMC path 
+        ///     if SD card is not active
+        /// </summary>
+        /// <param name="_name">The full path from root (no drive letter etc)</param>
+        /// <returns>A byte array holding the file - or null for not found</returns>
+        // ------------------------------------------------------------
+        byte[] LoadFile(string _name);
 
     }
 }

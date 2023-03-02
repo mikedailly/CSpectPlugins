@@ -64,6 +64,18 @@ namespace ay8912
 
         public void ProcessAY(int _index)
         {
+            ayemu_stereo_t chan;
+            switch(AY.ChannelSelection)
+            {
+                case eStereoMode.ABC: chan = ayemu_stereo_t.AYEMU_ABC; break;
+                case eStereoMode.ACB: chan = ayemu_stereo_t.AYEMU_ACB; break;
+                case eStereoMode.Mono: chan = ayemu_stereo_t.AYEMU_MONO; break;
+                default:
+                    chan = ayemu_stereo_t.AYEMU_ABC;
+                    break;
+            }
+
+            ay8912.ayemu_set_stereo(AY, chan, null);
             ay8912.ayemu_gen_sound(AY,m_pAYBuffer, null,1, _index);
         }
 
@@ -88,6 +100,11 @@ namespace ay8912
         public byte ReadAY(int _reg)
         {
             return ay8912.ayemu_get_reg(AY, _reg);
+        }
+
+        public void SetSteroMode(eStereoMode _mode)
+        {
+            m_AY.ChannelSelection = _mode;
         }
     }
 }

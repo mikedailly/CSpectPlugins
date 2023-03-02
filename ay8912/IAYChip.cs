@@ -7,6 +7,19 @@ using System.Threading.Tasks;
 namespace ay8912
 {
     /// <summary>
+    ///     AY channel selection
+    /// </summary>
+    public enum eStereoMode
+    {
+        /// <summary>Channels are A left, B left+right, C right (default)</summary>
+        ABC,
+        /// <summary>Channels are A left, C left+right, B right</summary>
+        ACB,
+        /// <summary>Channels are A, B and C are in both left+right</summary>
+        Mono
+    }
+    
+    /// <summary>
     ///     AY chip interface
     /// </summary>
     interface IAYChip
@@ -46,6 +59,12 @@ namespace ay8912
         /// <summary>
         ///     Reset the frame
         /// </summary>
-        void AYFrameReset();        
+        void AYFrameReset();
+
+        /// <summary>
+        ///     Set the channel output mode
+        /// </summary>
+        /// <param name="_mode">Channel selection mode</param>
+        void SetSteroMode(eStereoMode _mode);
     }
 }

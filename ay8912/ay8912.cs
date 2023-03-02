@@ -110,13 +110,13 @@ namespace ay8912
 
 
             // for YM 
-            default_layout[0][0] = new int[] { 100, 100, 100, 100, 100, 100 };  // _MONO
-            default_layout[0][1] = new int[] { 100, 5, 70, 70, 5, 100 };      // _ABC
-            default_layout[0][2] = new int[] { 100, 5, 5, 100, 70, 70 };      // _ACB
-            default_layout[0][3] = new int[] { 70, 70, 100, 5, 5, 100 };      // _BAC
-            default_layout[0][4] = new int[] { 5, 100, 100, 5, 70, 70 };      // _BCA
-            default_layout[0][5] = new int[] { 70, 70, 5, 100, 100, 5 };      // _CAB
-            default_layout[0][6] = new int[] { 5, 100, 70, 70, 100, 5 };      // _CBA
+            default_layout[1][0] = new int[] { 100, 100, 100, 100, 100, 100 };  // _MONO
+            default_layout[1][1] = new int[] { 100, 5, 70, 70, 5, 100 };      // _ABC
+            default_layout[1][2] = new int[] { 100, 5, 5, 100, 70, 70 };      // _ACB
+            default_layout[1][3] = new int[] { 70, 70, 100, 5, 5, 100 };      // _BAC
+            default_layout[1][4] = new int[] { 5, 100, 100, 5, 70, 70 };      // _BCA
+            default_layout[1][5] = new int[] { 70, 70, 5, 100, 100, 5 };      // _CAB
+            default_layout[1][6] = new int[] { 5, 100, 70, 70, 100, 5 };      // _CBA
 
   
         }
@@ -528,7 +528,9 @@ void ayemu_set_regs(ayemu_ay_t ay, unsigned char* regs)
                 {
                     vol2 = ay.table[n];
                     for (m = 0; m < 6; m++)
+                    {
                         ay.vols[m][n] = (int)(((double)vol2 * ay.eq[m]) / 100);
+                    }
                 }
             }
 
@@ -605,6 +607,7 @@ void ayemu_set_regs(ayemu_ay_t ay, unsigned char* regs)
 
                     //#define ENVVOL Envelope[ay.regs.env_style][ay.env_pos]
 
+                    // Mix each AY chip in to the 
                     if ((ay.bit_a | !ay.regs.R7_tone_a) & (ay.bit_n | !ay.regs.R7_noise_a))
                     {
                         tmpvol = (ay.regs.env_a) ? Envelope[ay.regs.env_style][ay.env_pos] : ay.regs.vol_a * 2 + 1;

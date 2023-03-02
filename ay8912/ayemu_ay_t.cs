@@ -49,6 +49,7 @@ namespace ay8912
 
         public int[] RegisterStore = new int[16];
 
+        public eStereoMode ChannelSelection;
 
         /// <summary>
         ///     Create ayemu_ay_t
@@ -62,6 +63,8 @@ namespace ay8912
 
             regs = new ayemu_regdata_t();
             sndfmt = new ayemu_sndfmt_t();
+
+            ChannelSelection = eStereoMode.ABC;
 
             vols = new int[6][];
             for (int i = 0; i < 6; i++){
