@@ -115,6 +115,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\ay8912\ay8912.csproj">
+      <Project>{c352cbbd-3f14-4645-a464-b35b5e3a2f37}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\..\CopperDissassembler\CopperDissassembler.csproj">
       <Project>{93d54582-277e-4aca-a6ab-9cadf5ba1886}</Project>
     </ProjectReference>
