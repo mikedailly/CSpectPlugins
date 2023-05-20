@@ -320,7 +320,7 @@ namespace NextRegisterViewer
 
 
 
-        #region Get Next Register descriptions
+        #region Display Next Register descriptions
         // ***************************************************************************************************************************
         /// <summary>
         ///      Sprite and Layers System

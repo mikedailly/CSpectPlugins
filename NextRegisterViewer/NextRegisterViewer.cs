@@ -131,7 +131,7 @@ namespace NextRegisterViewer
         {
             if (!Active) return;
 
-            for(int i=0;i<256;i++)
+            for (int i=0;i<256;i++)
             {
                 if (Regs.RegisterIsWritten[i] > 0)
                 {

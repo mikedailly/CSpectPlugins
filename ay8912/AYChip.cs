@@ -62,6 +62,17 @@ namespace ay8912
             int ret = ay8912.ayemu_set_sound_format(AY, 312 * 2 * 50, 2, 8);
         }
 
+        /// <summary>
+        ///     Reset the AY chip
+        /// </summary>
+        /// <param name="_ay"></param>
+        public void AYReset()
+        {
+            ay8912.ayemu_reset(AY);
+        }
+
+
+
         public void ProcessAY(int _index)
         {
             ayemu_stereo_t chan;

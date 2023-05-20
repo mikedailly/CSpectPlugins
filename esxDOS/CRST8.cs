@@ -38,7 +38,7 @@ namespace esxDOS
         public const int SDCard_Write_Port = 0xE7;
 
         public bool m_Internal = false;
-        public byte port_e7 = 0;
+        public byte port_e7 = 0xfe;
 
         public const int IM0 = 0;
         public const int IM1 = 1;
