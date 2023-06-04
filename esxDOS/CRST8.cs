@@ -1163,6 +1163,7 @@ namespace esxDOS
                 return true;
             }
             g_StreamHandle = FileHandles[regs.A];
+            if (g_StreamHandle == null) return true;
 
             // set a block address - start at 0
             CSpect.Poke((UInt16)(regs.IX), 0);
@@ -1199,6 +1200,9 @@ namespace esxDOS
         // (available separately or at the end of this document).
         public bool StartStream()
         {
+            StreamEnabled = false;
+            if (g_StreamHandle == null) return true;
+
             bool DontWait = (regs.A & 0x80) == 0x80;
             BlockStart = ((regs.IX & 0xffff) << 16) + (regs.DE & 0xffff);
             BlockCount = regs.BC;
