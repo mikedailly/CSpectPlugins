@@ -22,3 +22,5 @@ NextRegisterViewer/bin/
 CSpectPlugins/CSpectPlugins/Release/CSpectPlugins.Build.CppClean.log
 CSpectPlugins/CSpectPlugins/Release/CSpectPlugins.log
 CSpectPlugins/CSpectPlugins/Release/CSpectPlugins.vcxproj.FileListAbsolute.txt
+SpriteViewer/bin/
+SpriteViewer/obj/

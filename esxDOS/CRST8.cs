@@ -34,8 +34,8 @@ namespace esxDOS
         public const int ESXDOS_SETFILEHANDLE = unchecked((int)0xdeadc0de);
 
         public const int PC_Address = 0x08;
-        public const int SDCard_Read_Port = 0xEb;
-        public const int SDCard_Write_Port = 0xE7;
+        public const int SDCard_Data_Port = 0xEb;
+        public const int SDCard_Control_Port = 0xE7;
 
         public bool m_Internal = false;
         public byte port_e7 = 0xfe;
@@ -59,6 +59,13 @@ namespace esxDOS
             S = 0x80
         };
 
+        /// <summary>SD card port writing</summary>
+        enum eState
+        {
+            idle,
+            waiting_for_cmd,
+            ProcessingCMD
+        }
 
         enum eFileAccessMode
         {
@@ -155,7 +162,8 @@ namespace esxDOS
             DISK_FILEMAP = 0x85,            // streaming get map start
             DISK_STRMSTART = 0x86,          // streaming start
             DISK_STRMEND = 0x87,            // streaming end
-
+            
+            M_DOSVERSION = 0X88,
             M_GETSETDRV = 0x89,
             M_GETDATE = 0x8E,
             F_OPEN = 0x9A,
@@ -181,6 +189,13 @@ namespace esxDOS
 
             // Used to pass a file handle to the system
             F_SPECIAL = 0xDF
+        };
+
+        enum eCMD18
+        {
+            None,
+            Waiting,
+            Reading
         };
 
         /// <summary>The current registers at RST $08 call time - updated upon return</summary>
@@ -210,6 +225,7 @@ namespace esxDOS
         /// <summary>Cached directory list of filenames</summary>
         public string[] FindFiles = null;
 
+
         /// <summary>Open directories</summary>
         FullDirectory OpenedDirectory;
         
@@ -229,7 +245,32 @@ namespace esxDOS
         int BlockStart = 0;
         /// <summary>Number of 512 byte blocks we're streaming</summary>
         int BlockCount = -1;
+        /// <summary>Global streaming handle</summary>
+        FileStream g_StreamHandle = null;
 
+        public const int SECTOR_BUFFER_CRC_SIZE = 2;
+        public const int SECTOR_BUFFER_SPACE_SIZE = 4;
+        public const int SECTOR_BUFFER_OFFEST = SECTOR_BUFFER_SPACE_SIZE + 1;
+        public const int SECTOR_BUFFER_SIZE = SECTOR_BUFFER_OFFEST + 512+ SECTOR_BUFFER_CRC_SIZE + SECTOR_BUFFER_SPACE_SIZE;
+        /// <summary>Used for reading sectors via the SD card interface</summary>
+        byte[] SectorBuffer = new byte[SECTOR_BUFFER_SIZE];
+        /// <summary>Index into Sector Buffer - used for CMD18 or CMD18</summary>
+        int Sectorindex = 0;
+        /// <summary>Current Sector Number used for CMD18 or CMD18</summary>
+        int SectorNumber = -1;
+        /// <summary>Current Sector Number used for CMD18 or CMD18</summary>
+        int SectorNumber_Start = -1;
+        /// <summary>Are we currently processing CMD18?</summary>
+        eCMD18 ProcessingCMD18 = eCMD18.None;
+        bool ProcessingCMD12 = false;
+
+        /// <summary>Current SD port write state</summary>
+        private eState State = eState.waiting_for_cmd;
+
+        private CMD_Packet CMD = new CMD_Packet();
+
+        /// <summary>Last streaming command written</summary>
+        private int CMD_Read_Index;
 
         public iCSpect CSpect;
 
@@ -268,16 +309,22 @@ namespace esxDOS
             // create a list of the ports we're interested in
             List<sIO> ports = new List<sIO>();
             ports.Add(new sIO(PC_Address, eAccess.Memory_EXE));                     // trap execution of RST $08
-            for (int i = SDCard_Read_Port; i <= 0xff00+ SDCard_Read_Port; i += 0x100)
+            for (int i = SDCard_Data_Port; i <= (0xff00+ SDCard_Data_Port); i += 0x100)
             {
                 ports.Add(new sIO(i, eAccess.Port_Read));                // read a streaming file
             }
-            for (int i = SDCard_Write_Port; i <= 0xff00 + SDCard_Write_Port; i += 0x100)
+
+            for (int i = SDCard_Data_Port; i <= (0xff00 + SDCard_Data_Port); i += 0x100)
+            {
+                ports.Add(new sIO(i, eAccess.Port_Write));                // read a streaming file
+            }
+
+            for (int i = SDCard_Control_Port; i <=( 0xff00 + SDCard_Control_Port); i += 0x100)
             {
                 ports.Add(new sIO(i, eAccess.Port_Write));                  // track SD card selection
             }
             //ports.Add(new sIO("<ctrl><alt>c", 0, eAccess.KeyPress));                   // Key press callback
-            ports.Add(new sIO(0xfe, eAccess.Port_Write));
+            //ports.Add(new sIO(0xfe, eAccess.Port_Write));
 
             return ports;
         }
@@ -334,25 +381,6 @@ namespace esxDOS
         {
             return true;
         }
-
-        // **********************************************************************
-        /// <summary>
-        ///     Write a value to one of the registered ports
-        /// </summary>
-        /// <param name="_port">the port being written to</param>
-        /// <param name="_value">the value to write</param>
-        // **********************************************************************
-        public bool Write(eAccess _type, int _port, int _id, byte _value)
-        {
-            if( _type==eAccess.Port_Write && (_port&0xff)==0xe7 )
-            {
-                // remember the value written so we know if it's SD card 1 or 2. We're only interested in SD card 1.
-                port_e7 = _value;
-            }
-            return false;
-        }
-
-
         // **********************************************************************
         /// <summary>
         ///     
@@ -369,7 +397,7 @@ namespace esxDOS
             bool active = (bool)CSpect.GetGlobal(eGlobal.esxDOS);
             if (!active) return 0;
 
-            if (_type == eAccess.Memory_EXE && _port== PC_Address)
+            if (_type == eAccess.Memory_EXE && _port == PC_Address)
             {
                 // special NEX loading mode
                 if (_id == ESXDOS_SETFILEHANDLE)
@@ -378,7 +406,8 @@ namespace esxDOS
                     _isvalid = true;
                     return 0;
                 }
-                else{
+                else
+                {
                     int b = CSpect.GetNextRegister(0x50);
                     if (b != 255) return 0;
 
@@ -387,16 +416,273 @@ namespace esxDOS
                     return (byte)0;
                 }
             }
-            else if ( _type == eAccess.Port_Read && (_port & 0xff) == 0xEb && port_e7 == 0xfe )
+            else if (_type == eAccess.Port_Read && (_port & 0xff) == 0xEb)
             {
-                active = (bool) CSpect.GetGlobal(eGlobal.SDCardActive0);
-                if (!active)
+                if( ProcessingCMD12)
                 {
                     _isvalid = true;
-                    return StreamByte();
+                    ProcessingCMD12 = false;
+                    return 0;
+                }
+                if (ProcessingCMD18 == eCMD18.Reading)
+                {
+                    active = (bool)CSpect.GetGlobal(eGlobal.SDCardActive0);
+                    if (!active)
+                    {
+                        _isvalid = true;
+                        return StreamCMDData();
+                    }
+                }
+                else if (port_e7 == 0xfe)
+                {
+                    active = (bool)CSpect.GetGlobal(eGlobal.SDCardActive0);
+                    if (!active)
+                    {
+                        _isvalid = true;
+                        return StreamByte();
+                    }
                 }
             }
             return 0;
+        }
+        #endregion
+
+
+
+
+
+
+        #region SD Card access
+
+        byte StreamCMDData()
+        {
+            if (ProcessingCMD18 == eCMD18.Reading)
+            {
+                byte b = SectorBuffer[Sectorindex];
+                Sectorindex++;
+                if (Sectorindex >= SectorBuffer.Length)
+                {
+                    SectorNumber++;
+                    Sectorindex = 0;
+                    try
+                    {
+                        g_StreamHandle.Read(SectorBuffer, SECTOR_BUFFER_OFFEST, 512);
+                    }
+                    catch {
+                        int o = 12;
+                    }
+                    ProcessingCMD18 = eCMD18.Reading;
+                }
+                return b;
+            }
+            /*else if (ProcessingCMD18 == eCMD18.Waiting)
+            {
+                return 255;
+            }*/
+            return 255;
+        }
+
+
+        byte StartCMD12(CMD_Packet _cmd)
+        {
+            ProcessingCMD18 =  eCMD18.None;
+            ProcessingCMD12 = true;
+            return 255;
+        }
+
+        // **********************************************************************
+        /// <summary>
+        ///     Read a single sector
+        /// </summary>
+        /// <param name="_cmd"></param>
+        /// <returns></returns>
+        // **********************************************************************
+        byte StartCMD17(CMD_Packet _cmd)
+        {
+            return 255;
+        }
+
+
+        // **********************************************************************
+        /// <summary>
+        ///     Read a multiple sectors
+        /// </summary>
+        /// <param name="_cmd">Init command</param>
+        /// <returns></returns>
+        // **********************************************************************
+        byte StartCMD18(CMD_Packet _cmd)
+        {
+            if (ProcessingCMD18 == eCMD18.None)
+            {
+                SectorNumber_Start = SectorNumber = (int)_cmd.arg32;
+                try
+                {
+                    g_StreamHandle.Seek(((long)SectorNumber) * 512, SeekOrigin.Begin);
+                    g_StreamHandle.Read(SectorBuffer, SECTOR_BUFFER_OFFEST, 512);
+                }
+                catch { }
+                SectorBuffer[SECTOR_BUFFER_OFFEST-1] = 0xfe;
+                SectorBuffer[SectorBuffer.Length - 10] = 0xff;
+                SectorBuffer[SectorBuffer.Length - 9] = 0xff;
+                for (int i = 0; i < SECTOR_BUFFER_SPACE_SIZE; i++)
+                {
+                    SectorBuffer[i] = 0;
+                }
+                for (int i= (SectorBuffer.Length- SECTOR_BUFFER_SPACE_SIZE); i< SectorBuffer.Length; i++)
+                {
+                    SectorBuffer[i] = 0;
+                }
+                Sectorindex = 0;
+                ProcessingCMD18 = eCMD18.Reading;   // ready to start reading
+            }
+            return 255;
+        }
+
+        // #####################################################################################
+        /// <summary>
+        ///     Read a byte from current command stream
+        /// </summary>
+        /// <returns></returns>
+        // #####################################################################################
+        byte SendCommand(CMD_Packet _cmd)
+        {
+            if (g_StreamHandle == null) return 0xff;
+
+
+            switch (CMD.cmd)
+            {
+                //case eSPI_CMD.CMD0: return ProcessCMD0(false);
+                //case eSPI_CMD.CMD1: return ProcessCMD1(false);
+                //case eSPI_CMD.CMD8: return ProcessCMD8(null, false);
+                //case eSPI_CMD.CMD9: return ProcessCMD9(false);
+                case eSPI_CMD.CMD12: return StartCMD12(_cmd);
+                //case eSPI_CMD.CMD13: return ProcessCMD13(false);
+                //case eSPI_CMD.CMD16: return ProcessCMD16(null, false);
+                case eSPI_CMD.CMD17: return StartCMD17(_cmd);
+                case eSPI_CMD.CMD18: return StartCMD18(_cmd);
+                //case eSPI_CMD.CMD24: return ProcessCMD24(null, false, false, 0);    // write
+                //case eSPI_CMD.CMD55: return ProcessCMD55(false);
+                //case eSPI_CMD.CMD58: return ProcessCMD58(false);
+                //case eSPI_CMD.ACMD41: return ProcessACMD41(false);
+            }
+            return 0xff;
+        }
+
+
+        // ################################################################################
+        /// <summary>
+        ///     Read an SPI command
+        /// </summary>
+        /// <param name="_byte">byte being sent</param>
+        // ################################################################################
+        private void WriteCommand(byte _byte)
+        {
+            // ignore FFs being sent....
+            if (CMD_Read_Index == 0)
+            {
+                /*if(ProcessingCMD18 == eCMD18.Waiting)
+                {
+                    if (_byte == 0xfe)
+                    {
+                        ProcessingCMD18 = eCMD18.Reading;
+                        Sectorindex = 0;
+                        return;
+                    }
+                }*/
+                if (_byte == 0xff) return;
+                if ((_byte & 0xc0) != 0x40) return;       // must be a bin of %01xxxxxx format
+            }
+
+            switch (CMD_Read_Index)
+            {
+                case 0:
+                    {
+                        CMD.cmd = (eSPI_CMD)_byte;
+                        break;
+                    }
+                case 1: CMD.arg0 = _byte; break;
+                case 2: CMD.arg1 = _byte; break;
+                case 3: CMD.arg2 = _byte; break;
+                case 4: CMD.arg3 = _byte; break;
+                case 5: CMD.crc = _byte; break;
+            }
+            CMD_Read_Index++;
+            if (CMD_Read_Index == 6)
+            {
+                if (g_StreamHandle != null)
+                {
+                    SendCommand(CMD);
+                    //State = eState.ProcessingCMD;
+                }
+                CMD_Read_Index = 0;
+            }
+        }
+        void WriteByte(byte _b)
+        {
+        }
+
+
+        // ################################################################################
+        /// <summary>
+        ///     Main command interface. Z80 writes a value via this.... 
+        /// </summary>
+        /// <param name="_byte">Byte being written</param>
+        // ################################################################################
+        public void WriteE3(byte _byte)
+        {
+            if (g_StreamHandle == null) return;
+            
+            switch (State)
+            {
+                case eState.waiting_for_cmd:
+                    {
+                        WriteCommand(_byte);
+                        break;
+                    }
+                case eState.ProcessingCMD:
+                    {
+                        // ignore while processing command
+                        if (g_StreamHandle != null)
+                        {
+                            // writing sector? all data goes to card
+                            if (CMD.cmd == eSPI_CMD.CMD24)
+                            {
+                                WriteByte(_byte);
+                                return;
+                            }
+                        }
+                        WriteCommand(_byte);
+                        return;
+                    }
+
+            }
+        }
+
+        // **********************************************************************
+        /// <summary>
+        ///     Write a value to one of the registered ports
+        /// </summary>
+        /// <param name="_port">the port being written to</param>
+        /// <param name="_value">the value to write</param>
+        // **********************************************************************
+        public bool Write(eAccess _type, int _port, int _id, byte _value)
+        {
+            if (_type == eAccess.Port_Write && (_port & 0xff) == 0xe7)
+            {
+                // remember the value written so we know if it's SD card 1 or 2. We're only interested in SD card 1.
+                // $E7/231      xxxxxxxx11100111 xxxxxxxx11100111         -        SD control	
+                // $fe=card 0, $fd=card 1	
+                port_e7 = _value;
+                return false;
+            }
+            else if (_type == eAccess.Port_Write && (_port & 0xff) == 0xeb)
+            {
+                // $fe=card 0, $fd=card 1	
+                WriteE3(_value);
+                port_e7 = _value;
+                return true;
+            }
+            return false;
         }
         #endregion
 
@@ -1137,7 +1423,7 @@ namespace esxDOS
         // Can be called multiple times if buffer is filled, continuing from previous. 
         // Entry: 
         //       A=file handle(just opened, or following previous DISK_FILEMAP calls)
-        //       IX=buffer 
+        //       IX=buffer (32bit LBA, and 16bit block out *pairs*)
         //       DE=max entries(each 6 bytes: 4 byte address, 2 byte sector count)
         // Exit(success): 
         //       Fc=0 
@@ -1154,7 +1440,7 @@ namespace esxDOS
         //       Please see example application code, stream.asm, for full usage information 
         //       (available separately or at the end of this document)
         //
-        FileStream g_StreamHandle = null;
+        // *************************************************************************** 
         public bool StreamFileMap()
         {
             if (regs.A < 0)
@@ -1165,17 +1451,39 @@ namespace esxDOS
             g_StreamHandle = FileHandles[regs.A];
             if (g_StreamHandle == null) return true;
 
-            // set a block address - start at 0
-            CSpect.Poke((UInt16)(regs.IX), 0);
-            CSpect.Poke((UInt16)(regs.IX + 1), 0);
-            CSpect.Poke((UInt16)(regs.IX + 2), 0);
-            CSpect.Poke((UInt16)(regs.IX + 3), 0);
 
-            regs.DE--;
+            int tlen = (int)g_StreamHandle.Length;
             int len = (int)(g_StreamHandle.Length + 511) >> 9;
-            CSpect.Poke((UInt16) (regs.IX + 4), (byte)(len & 0xff));
-            CSpect.Poke( (UInt16) (regs.IX + 5), (byte)((len >> 8) & 0xff));
-            regs.HL = (UInt16) (regs.IX + 6);
+            int count = (tlen + (32 * 1024 * 1024)-1) / (32 * 1024 * 1024);
+            int block = 0;
+            int offset = 0;
+            while (count > 0)
+            {
+                // set a block address - start at 0
+                CSpect.Poke((UInt16)(regs.IX + offset), (byte) (block&0xff));
+                CSpect.Poke((UInt16)(regs.IX + offset + 1), (byte) ((block >> 8) & 0xff));
+                CSpect.Poke((UInt16)(regs.IX + offset + 2), (byte) ((block >> 16) & 0xff));
+                CSpect.Poke((UInt16)(regs.IX + offset + 3), (byte) ((block >> 24) & 0xff));
+
+                if (count != 1)
+                {
+                    CSpect.Poke((UInt16)(regs.IX + offset + 4), (byte)255);
+                    CSpect.Poke((UInt16)(regs.IX + offset + 5), (byte)255);
+                }
+                else
+                {
+                    tlen = (tlen + 511) >> 9;
+                    CSpect.Poke((UInt16)(regs.IX + offset + 4), (byte)(tlen & 0xff));
+                    CSpect.Poke((UInt16)(regs.IX + offset + 5), (byte)((tlen >> 8) & 0xff));
+                }
+
+                tlen -= (65535 * 512);
+                regs.DE--;
+                count--;
+                block += 65535;
+                offset += 6;
+            }
+            regs.HL = (UInt16) (regs.IX + offset +6);
             regs.A = 2;         // card ID 0, abd 1 for BLOCK addressing
             return false;
         }
@@ -1833,6 +2141,39 @@ namespace esxDOS
         }
 
 
+        // ***************************************************************************
+        // * M_DOSVERSION($88) *
+        // ***************************************************************************
+        // Get API version/mode information.
+        // Entry:
+        // -
+        // Exit:
+        //      For esxDOS <= 0.8.6
+        //      Fc=1, error
+        //      A=14 ("no such device")
+        //
+        // For NextZXOS:
+        //      Fc=0, success
+        //      B='N',C='X' (NextZXOS signature)
+        //      DE=NextZXOS version in BCD format: D=major, E=minor version
+        //          eg for NextZXOS v1.94, DE =$0194
+        //      HL=language code:
+        //          English: L='e',H='n'
+        //          Spanish: L='e',H='s'
+        //      Further languages may be available in the future
+        //      A=0 if running in NextZXOS mode(and zero flag is set)
+        //      A<>0 if running in 48K mode(and zero flag is reset)
+        //
+        //****************************************************************************
+        public void GetDosVersion()
+        {
+            regs.A = 0;
+            regs.DE = 0x0202;
+            regs.H = 'n';
+            regs.L = 'e';
+            regs.B = 'N';
+            regs.C = 'X';
+        }
         //****************************************************************************
         /// <summary>
         ///     Do open/read/write/close ops - pretend to be an MMC card 
@@ -1862,6 +2203,7 @@ namespace esxDOS
                 case RST08.DISK_STRMSTART:  setC(StartStream()); break;             // streaming start
                 case RST08.DISK_STRMEND:    setC(EndStream()); break;               // streaming end
 
+                case RST08.M_DOSVERSION:    GetDosVersion(); setC(false); break;    // set default drive (random number really)
                 case RST08.M_GETSETDRV:     DoGetSetDrive(); setC(false); break;    // set default drive (random number really)
                 case RST08.F_OPEN:          setC(OpenRST8File()); break;
                 case RST08.F_READ:          setC(ReadRST8File()); break;

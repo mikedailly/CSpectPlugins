@@ -328,11 +328,12 @@ namespace Plugin
         /// </summary>
         /// <param name="_address">Sprite data address (0-$3fff)</param>
         /// <param name="_count">number of bytes to "peek"</param>
+        /// <param name="_buffer">optional buffer to fill (from 0)</param>
         /// <returns>
         ///     Array holding the requested location
         /// </returns>
         // ------------------------------------------------------------
-        byte[] PeekSprite(int _address, int _count);
+        byte[] PeekSprite(int _address, int _count, byte[] _buffer = null);
 
 
         // ------------------------------------------------------------
