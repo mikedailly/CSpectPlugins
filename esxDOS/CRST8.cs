@@ -302,9 +302,13 @@ namespace esxDOS
         // **********************************************************************
         public List<sIO> Init(iCSpect _CSpect)
         {
+            CSpect = _CSpect;
+            bool active = (bool)CSpect.GetGlobal(eGlobal.esxDOS);
+            if (!active) return null;
+
+
             Debug.WriteLine("RST 0x08 interface added");
 
-            CSpect = _CSpect;
 
             // create a list of the ports we're interested in
             List<sIO> ports = new List<sIO>();
@@ -454,6 +458,13 @@ namespace esxDOS
 
         #region SD Card access
 
+
+        // **********************************************************************
+        /// <summary>
+        ///     Stream data from a fake SD card
+        /// </summary>
+        /// <returns>A new byte from the sector</returns>
+        // **********************************************************************
         byte StreamCMDData()
         {
             if (ProcessingCMD18 == eCMD18.Reading)
@@ -482,7 +493,13 @@ namespace esxDOS
             return 255;
         }
 
-
+        // **********************************************************************
+        /// <summary>
+        ///     Stop transmission
+        /// </summary>
+        /// <param name="_cmd">Command packet</param>
+        /// <returns></returns>
+        // **********************************************************************
         byte StartCMD12(CMD_Packet _cmd)
         {
             ProcessingCMD18 =  eCMD18.None;
@@ -492,7 +509,7 @@ namespace esxDOS
 
         // **********************************************************************
         /// <summary>
-        ///     Read a single sector
+        ///     Read a single block/sector
         /// </summary>
         /// <param name="_cmd"></param>
         /// <returns></returns>
@@ -564,6 +581,8 @@ namespace esxDOS
                 //case eSPI_CMD.CMD55: return ProcessCMD55(false);
                 //case eSPI_CMD.CMD58: return ProcessCMD58(false);
                 //case eSPI_CMD.ACMD41: return ProcessACMD41(false);
+                default:
+                    break;
             }
             return 0xff;
         }

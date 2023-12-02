@@ -62,7 +62,7 @@ namespace CopperDissassembler
             // Detect keypress for starting disassembler
             List<sIO> ports = new List<sIO>();
             ports.Add(new sIO("<ctrl><alt>c", eAccess.KeyPress, 0));                   // Key press callback
-            ports.Add(new sIO("<ctrl><alt>r", eAccess.KeyPress, 1));                   // toggle copper/irq visualiser
+            ports.Add(new sIO("<ctrl><alt>x", eAccess.KeyPress, 1));                   // toggle copper/irq visualiser
             return ports;
         }
 
