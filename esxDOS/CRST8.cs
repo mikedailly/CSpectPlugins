@@ -900,7 +900,7 @@ namespace esxDOS
                             OpenFileBuffer = FindFileName(OpenFileBuffer);
                             if (File.Exists(OpenFileBuffer))
                             {
-                                handle = File.Open(OpenFileBuffer, FileMode.Open);
+                                handle = File.Open(OpenFileBuffer, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                             }
                         }
                         else if ((regs.B & 0xc) == (int)RST08.FMODE_CREATE)
