@@ -158,22 +158,45 @@ namespace esxDOS
             FMODE_CREATE = 0x04,			// create if doesn't exist, else error
             FMODE_TRUNCATE = 0x0c,			// create and/or truncate
 
-
+            /// <summary>Obtain a map of card addresses describing the space occupied by the file</summary>
             DISK_FILEMAP = 0x85,            // streaming get map start
+            /// <summary>Start reading from the card in streaming mode.</summary>
             DISK_STRMSTART = 0x86,          // streaming start
+            /// <summary>Stop current streaming operation.</summary>
             DISK_STRMEND = 0x87,            // streaming end
-            
+
+            /// <summary>Get API version/mode information.</summary>
             M_DOSVERSION = 0X88,
             M_GETSETDRV = 0x89,
+            /// <summary> Get the current date/time.</summary>
             M_GETDATE = 0x8E,
+            /// <summary>Execute a DOT command - not implemented</summary>
+            M_EXECCMD= 0x8F,
+            /// <summary>Set general capabilities - not implemented</summary>
+            M_SETCAPS = 0x91,
+            /// <summary>Access API for installable drivers - not implemented</summary>
+            M_DRVAPI = 0x92,
+            /// <summary>Get error - not implemented</summary>
+            M_GETERR = 0x93,
+            /// <summary>Open a file.</summary>
             F_OPEN = 0x9A,
+            /// <summary>Close a file or directory.</summary>
             F_CLOSE = 0x9B,
+            /// <summary>Sync file changes to disk.</summary>
+            F_SYNC = 0x9C,
+            /// <summary>Read bytes from file.</summary>
             F_READ = 0x9D,
+            /// <summary>Write bytes to file.</summary>
             F_WRITE = 0x9E,
+            /// <summary>Seek to position in file</summary>
             F_SEEK = 0x9F,
+
+            /// <summary>Get file position - not implemented</summary>
+            F_FGETPOS = 0xA0,
+            /// <summary>Get file information/status</summary>
             F_FSTAT = 0xA1,
-            F_STAT = 0xAC,
-            F_RENAME = 0xB0,
+            /// <summary>Truncate a file - not implemented</summary>
+            F_FTRUNCATE = 0xA2,
 
             F_OPENDIR = 0xA3,
             F_READ_DIR = 0xA4,
@@ -183,9 +206,13 @@ namespace esxDOS
             F_GETCWD = 0xA8,
             F_CHDIR = 0xA9,
             F_MKDIR = 0xAA,
-
-            // Not yet implemented
+            /// <summary>Remove directory - not implemented</summary>
             F_RMDIR = 0xAB,
+            F_STAT = 0xAC,
+            /// <summary>Delete file - not implemented</summary>
+            F_UNLINK = 0xAD,
+            F_RENAME = 0xB0,
+
 
             // Used to pass a file handle to the system
             F_SPECIAL = 0xDF
@@ -1166,6 +1193,44 @@ namespace esxDOS
             return false;
         }
 
+
+        //****************************************************************************
+        /// <summary>
+        ///     F_FGETPOS - get current file position
+        /// </summary>
+        /// <remarks>
+        ///     Entry:
+        ///         A=file handle
+        ///         Exit(success) :
+        ///             Fc=0
+        ///             BCDE=current position
+        ///         Exit(failure) :
+        ///             Fc=1
+        ///             A=error code
+        ///     NOTES:
+        ///         Attempts to seek past beginning/end of file leave BCDE=position=0/filesize
+        ///         respectively, with no error.
+        ///</remarks>
+        //****************************************************************************
+        bool GetPosRST8File()
+        {
+            if (StreamEnabled)
+            {
+                regs.A = -1;
+                return true;
+            }
+
+
+            if (regs.A == 0) return true;
+            FileStream handle = FileHandles[regs.A];
+            if (handle == null) return true;
+
+            long offset = handle.Position;
+
+            regs.DE = (UInt16)(offset & 0xffff);
+            regs.BC = (UInt16)(offset >> 16);
+            return false;
+        }
 
 
         //****************************************************************************
@@ -2228,6 +2293,7 @@ namespace esxDOS
                 case RST08.F_READ:          setC(ReadRST8File()); break;
                 case RST08.F_WRITE:         setC(WriteRST8File()); break;
                 case RST08.F_SEEK:          setC(SeekRST8File()); break;
+                case RST08.F_FGETPOS:       setC(GetPosRST8File()); break;
                 case RST08.F_CLOSE:         setC(CloseRST8File()); break;
                 case RST08.F_FSTAT:         setC(DoGetFileInfoHandle()); break;
                 case RST08.F_STAT:          setC(DoGetFileInfoString()); break;
