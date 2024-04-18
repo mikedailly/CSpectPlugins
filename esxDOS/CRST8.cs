@@ -29,6 +29,10 @@ namespace esxDOS
     // **********************************************************************
     public class CRST8 : iPlugin
     {
+        WAD WadFile;
+        IFileIO FileSystem;
+
+
         #region Plugin interface
         /// <summary>Special ID passed in to pass a pre-opened filehandle and return a NEXT file handle</summary>
         public const int ESXDOS_SETFILEHANDLE = unchecked((int)0xdeadc0de);
@@ -229,12 +233,10 @@ namespace esxDOS
         Z80Regs regs;
         /// <summary>The current drive</summary>
         int CurrentDrive = 0;
-        /// <summary>Load the whole file into memory?</summary>
-        bool LoadFileIntoMemory = false;
         /// <summary>Simple buffer for loading in data before poking into memory - could go direct in many cases</summary>
         public byte[] filebuffer = new byte[65536];                    // buffer for reading in file
         /// <summary>You can have upto 255 files open at once</summary>
-        public FileStream[] FileHandles = new FileStream[256];                         // Div MMC open file handles
+        public int[] FileHandles = new int[256];                         // Div MMC open file handles
         /// <summary>The "up to" 255 file names that are open</summary>
         public string[] FileNames = new string[256];
         /// <summary>Used when the whole file is loaded into memory - not streamed</summary>
@@ -273,7 +275,7 @@ namespace esxDOS
         /// <summary>Number of 512 byte blocks we're streaming</summary>
         int BlockCount = -1;
         /// <summary>Global streaming handle</summary>
-        FileStream g_StreamHandle = null;
+        int g_StreamHandle = -1;
 
         public const int SECTOR_BUFFER_CRC_SIZE = 2;
         public const int SECTOR_BUFFER_SPACE_SIZE = 4;
@@ -332,6 +334,9 @@ namespace esxDOS
             CSpect = _CSpect;
             bool active = (bool)CSpect.GetGlobal(eGlobal.esxDOS);
             if (!active) return null;
+
+            // Install the disk interface - this lets us replace it with a behind the scenes WAD system if we want....
+            FileSystem = new HDFileSystem();
 
 
             Debug.WriteLine("RST 0x08 interface added");
@@ -481,8 +486,6 @@ namespace esxDOS
 
 
 
-
-
         #region SD Card access
 
 
@@ -504,7 +507,7 @@ namespace esxDOS
                     Sectorindex = 0;
                     try
                     {
-                        g_StreamHandle.Read(SectorBuffer, SECTOR_BUFFER_OFFEST, 512);
+                        FileSystem.Read(g_StreamHandle, SectorBuffer, SECTOR_BUFFER_OFFEST, 512);
                     }
                     catch {
                         int o = 12;
@@ -561,8 +564,8 @@ namespace esxDOS
                 SectorNumber_Start = SectorNumber = (int)_cmd.arg32;
                 try
                 {
-                    g_StreamHandle.Seek(((long)SectorNumber) * 512, SeekOrigin.Begin);
-                    g_StreamHandle.Read(SectorBuffer, SECTOR_BUFFER_OFFEST, 512);
+                    FileSystem.Seek(g_StreamHandle, ((long)SectorNumber) * 512, SeekOrigin.Begin);
+                    FileSystem.Read(g_StreamHandle, SectorBuffer, SECTOR_BUFFER_OFFEST, 512);
                 }
                 catch { }
                 SectorBuffer[SECTOR_BUFFER_OFFEST-1] = 0xfe;
@@ -590,7 +593,7 @@ namespace esxDOS
         // #####################################################################################
         byte SendCommand(CMD_Packet _cmd)
         {
-            if (g_StreamHandle == null) return 0xff;
+            if (g_StreamHandle <0) return 0xff;
 
 
             switch (CMD.cmd)
@@ -655,7 +658,7 @@ namespace esxDOS
             CMD_Read_Index++;
             if (CMD_Read_Index == 6)
             {
-                if (g_StreamHandle != null)
+                if (g_StreamHandle >0)
                 {
                     SendCommand(CMD);
                     //State = eState.ProcessingCMD;
@@ -676,7 +679,7 @@ namespace esxDOS
         // ################################################################################
         public void WriteE3(byte _byte)
         {
-            if (g_StreamHandle == null) return;
+            if (g_StreamHandle < 0) return;
             
             switch (State)
             {
@@ -688,7 +691,7 @@ namespace esxDOS
                 case eState.ProcessingCMD:
                     {
                         // ignore while processing command
-                        if (g_StreamHandle != null)
+                        if (g_StreamHandle >=0 )
                         {
                             // writing sector? all data goes to card
                             if (CMD.cmd == eSPI_CMD.CMD24)
@@ -913,85 +916,64 @@ namespace esxDOS
             //
             // Now open file, and if in READ mode...read it all in...
             //
-            int i = 1;
-            while (i < 256)
+            try
             {
-                if (FileHandles[i] == null)
+                int handle = -1;
+
+                if ((regs.B & 0xc) == (int)RST08.FMODE_OPEN)
                 {
-                    try
+                    OpenFileBuffer = FindFileName(OpenFileBuffer);
+                    if (FileSystem.Exists(OpenFileBuffer))
                     {
-                        FileStream handle = null;
-
-                        if ((regs.B & 0xc) == (int)RST08.FMODE_OPEN)
-                        {
-                            OpenFileBuffer = FindFileName(OpenFileBuffer);
-                            if (File.Exists(OpenFileBuffer))
-                            {
-                                handle = File.Open(OpenFileBuffer, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                            }
-                        }
-                        else if ((regs.B & 0xc) == (int)RST08.FMODE_CREATE)
-                        {
-                            string currfile = FindFileName(OpenFileBuffer);
-                            if (!File.Exists(currfile))
-                            {
-                                // Can only create new if file doesn't exist
-                                handle = File.Open(OpenFileBuffer, FileMode.CreateNew);
-                            }
-                        }
-                        else if ((regs.B & 0xc) == (int)RST08.FMODE_TRUNCATE)
-                        {
-
-                            string CurrFile = FindFileName(OpenFileBuffer);
-                            if (File.Exists(CurrFile))
-                            {
-                                OpenFileBuffer = CurrFile;
-                                handle = File.Open(OpenFileBuffer, FileMode.Truncate);
-                            }
-                            else
-                            {
-                                handle = File.Open(OpenFileBuffer, FileMode.CreateNew);     // create original name
-                            }
-                            FindFiles = null;
-                        }
-                        if (handle == null)
-                        {
-                            regs.A = 5;             // No such file or directory
-                            return true;
-                        }
-                        FileHandles[i] = handle;
-                        FileNames[i] = OpenFileBuffer;
-
-                        if (LoadFileIntoMemory)
-                        {
-                            string CurrFile = FindFileName(OpenFileBuffer);
-                            if (File.Exists(CurrFile))
-                            {
-                                pFiles[i] = File.ReadAllBytes(OpenFileBuffer);
-                                FileSize[i] = pFiles[i].Length;
-                                FilePointers[i] = 0;
-                            }
-                        }
-                        regs.A = i;
-                        return false;
-                    }
-                    catch (Exception ex)
-                    {
-                        if (ex.Message.Contains("is denied"))
-                        {
-                            regs.A = 8;             // access is denied
-                        }
-                        else
-                        {
-                            regs.A = 5;             // error/exception opening file
-                        }
-                        return true;
+                        handle = FileSystem.Open(OpenFileBuffer, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                     }
                 }
-                i++;
+                else if ((regs.B & 0xc) == (int)RST08.FMODE_CREATE)
+                {
+                    string currfile = FindFileName(OpenFileBuffer);
+                    if (!FileSystem.Exists(currfile))
+                    {
+                        // Can only create new if file doesn't exist
+                        handle = FileSystem.Open(OpenFileBuffer, FileMode.CreateNew);
+                    }
+                }
+                else if ((regs.B & 0xc) == (int)RST08.FMODE_TRUNCATE)
+                {
+
+                    string CurrFile = FindFileName(OpenFileBuffer);
+                    if (FileSystem.Exists(CurrFile))
+                    {
+                        OpenFileBuffer = CurrFile;
+                        handle = FileSystem.Open(OpenFileBuffer, FileMode.Truncate);
+                    }
+                    else
+                    {
+                        handle = FileSystem.Open(OpenFileBuffer, FileMode.CreateNew);     // create original name
+                    }
+                    FindFiles = null;
+                }
+                if (handle < 0)
+                {
+                    regs.A = 5;             // No such file or directory
+                    return true;
+                }
+                regs.A = handle&0xff;
+                return false;
             }
-            regs.A = 12;            // too many files open error
-            return true;
+            catch (Exception ex)
+            {
+                if (ex.Message.Contains("is denied"))
+                {
+                    regs.A = 8;             // access is denied
+                }
+                else
+                {
+                    regs.A = 5;             // error/exception opening file
+                }
+                return true;
+            }
+            //regs.A = 12;            // too many files open error
+            //return true;
         }
 
         //****************************************************************************
@@ -1012,64 +994,35 @@ namespace esxDOS
             }
 
             if (regs.A == 0) return true;           // file handle 0?
-            FileStream handle = FileHandles[regs.A];
-            if (handle == null) return true;
+            int handle = regs.A;
+            if (!FileSystem.IsOpen(handle)) return true;
+
             int size = regs.BC;
             int address = regs.IX;
 
-            // got this file in memory?
-            if (pFiles[regs.A] != null)
+            // read data
+            int val = 0;
+            try
             {
-                byte[] pMemory = pFiles[regs.A];
-                int file_head = FilePointers[regs.A];
-                int filesize = FileSize[regs.A];
-                int counter = 0;
-                byte[] m = new byte[1];
-                while (size > 0)
-                {
-                    if (size < filesize)
-                    {
-                        byte b = pMemory[file_head++];
-                        CSpect.Poke( (UInt16)address++, b);
-                        counter++;
-                        size--;
-                    }
-                    else
-                    {
-                        break;
-                    }
-                }
-                regs.B = (counter >> 8) & 0xff;
-                regs.C = (counter & 0xff);
-                regs.HL = (UInt16)(address & 0xffff);
-                FilePointers[regs.A] = file_head;
+                val = FileSystem.Read(regs.A,filebuffer, 0, size);  //_read(handle, &(filebuffer[0]), size);
+                size = val;
             }
-            else
+            catch
             {
-                // read data
-                int val = 0;
-                try
-                {
-                    val = FileHandles[regs.A].Read(filebuffer, 0, size);  //_read(handle, &(filebuffer[0]), size);
-                    size = val;
-                }
-                catch
-                {
-                    regs.DE = regs.BC = 0;
-                    return true;
-                }
-                regs.B = (val >> 8) & 0xff;
-                regs.C = (val & 0xff);
-                regs.DE = regs.BC;
+                regs.DE = regs.BC = 0;
+                return true;
+            }
+            regs.B = (val >> 8) & 0xff;
+            regs.C = (val & 0xff);
+            regs.DE = regs.BC;
 
-                // write to memory through whatever banks are set - this could be better in the extension....
-                for (int i = 0; i < size; i++)
-                {
-                    byte b = filebuffer[i];
-                    CSpect.Poke((UInt16) address++, b);
-                }
-                regs.HL = (UInt16) (address & 0xffff);
+            // write to memory through whatever banks are set - this could be better in the extension....
+            for (int i = 0; i < size; i++)
+            {
+                byte b = filebuffer[i];
+                CSpect.Poke((UInt16) address++, b);
             }
+            regs.HL = (UInt16) (address & 0xffff);
             return false;
         }
 
@@ -1092,8 +1045,9 @@ namespace esxDOS
 
 
             if (regs.A == 0) return true;
-            FileStream handle = FileHandles[regs.A];
-            if (handle == null) return true;
+            if (!FileSystem.IsOpen(regs.A)) return true;
+
+            int handle = regs.A;
             int size = regs.BC;    
             int address = regs.IX;
 
@@ -1104,7 +1058,7 @@ namespace esxDOS
             try
             {
                 // write data
-                handle.Write(data, 0, size);
+                FileSystem.Write(handle, data, 0, size);
             }
             catch
             {
@@ -1134,11 +1088,9 @@ namespace esxDOS
 
 
             if (regs.A == 0) return true;
-            FileStream handle = FileHandles[regs.A];
-            if (handle == null) return true;
-            handle.Close();
-            FileHandles[regs.A] = null;
-            return false;
+            bool res = FileSystem.Close(regs.A);
+            if (res) return false;
+            return true;
         }
 
         //****************************************************************************
@@ -1174,16 +1126,16 @@ namespace esxDOS
 
 
             if (regs.A == 0) return true;
-            FileStream handle = FileHandles[regs.A];
-            if (handle == null) return true;
+            if( !FileSystem.IsOpen(regs.A)) return false;
+            int handle = regs.A;
 
             long offset = (int)regs.DE | ((int)regs.BC << 16);
             int seek_kind = regs.IX & 0xff;
             switch (seek_kind)
             {
-                case 0: offset = (int)handle.Seek(offset, SeekOrigin.Begin); break;      // from start
-                case 1: offset = (int)handle.Seek(offset, SeekOrigin.Current); break;      // from current +pos (rel)
-                case 2: offset = (int)handle.Seek(-offset, SeekOrigin.Current); break;     // negative current pos (rel)
+                case 0: offset = (int)FileSystem.Seek(handle, offset, SeekOrigin.Begin); break;      // from start
+                case 1: offset = (int)FileSystem.Seek(handle, offset, SeekOrigin.Current); break;      // from current +pos (rel)
+                case 2: offset = (int)FileSystem.Seek(handle, -offset, SeekOrigin.Current); break;     // negative current pos (rel)
                 default:
                     return false;
             }
@@ -1222,10 +1174,10 @@ namespace esxDOS
 
 
             if (regs.A == 0) return true;
-            FileStream handle = FileHandles[regs.A];
-            if (handle == null) return true;
+            if(!FileSystem.IsOpen(regs.A)) return false;
+            int handle = regs.A;
 
-            long offset = handle.Position;
+            long offset = FileSystem.GetPosition(handle);
 
             regs.DE = (UInt16)(offset & 0xffff);
             regs.BC = (UInt16)(offset >> 16);
@@ -1532,12 +1484,11 @@ namespace esxDOS
                 regs.A = -1;
                 return true;
             }
-            g_StreamHandle = FileHandles[regs.A];
-            if (g_StreamHandle == null) return true;
+            if(!FileSystem.IsOpen(regs.A)) return true;
+            g_StreamHandle = regs.A;
 
-
-            int tlen = (int)g_StreamHandle.Length;
-            int len = (int)(g_StreamHandle.Length + 511) >> 9;
+            int tlen = (int)FileSystem.GetLength(g_StreamHandle);
+            int len = (int)(tlen + 511) >> 9;
             int count = (tlen + (32 * 1024 * 1024)-1) / (32 * 1024 * 1024);
             int block = 0;
             int offset = 0;
@@ -1593,7 +1544,7 @@ namespace esxDOS
         public bool StartStream()
         {
             StreamEnabled = false;
-            if (g_StreamHandle == null) return true;
+            if (g_StreamHandle <0 ) return true;
 
             bool DontWait = (regs.A & 0x80) == 0x80;
             BlockStart = ((regs.IX & 0xffff) << 16) + (regs.DE & 0xffff);
@@ -1602,7 +1553,7 @@ namespace esxDOS
 
             try
             {
-                g_StreamHandle.Seek(BlockStart * 512, SeekOrigin.Begin);           // move to start of the file
+                FileSystem.Seek(g_StreamHandle,BlockStart * 512, SeekOrigin.Begin);           // move to start of the file
             }
             catch { }
 
@@ -1630,7 +1581,7 @@ namespace esxDOS
             for (int i = 0; i < 512; i++) { StreamBuffer[i] = 0; }        // clear buffer
             try
             {
-                int val = g_StreamHandle.Read(StreamBuffer, 0, 512);
+                int val = FileSystem.Read(g_StreamHandle, StreamBuffer, 0, 512);
             }
             catch { }
             StreamByteCount = 512;
@@ -1719,15 +1670,7 @@ namespace esxDOS
         //****************************************************************************
         private void CloseAllHandles()
         {
-            for (int i = 1; i < 256; i++)
-            {
-                if (FileHandles[i] != null)
-                {
-                    FileHandles[i].Close();
-                    FileHandles[i] = null;
-                    FileNames[i] = null;
-                }
-            }
+            FileSystem.CloseAll();
             EndStream();
         }
 
@@ -2206,22 +2149,13 @@ namespace esxDOS
         //********************************************************************************************************************************************************
         public bool SetFileHandle()
         {
-            FileStream handle = (FileStream)CSpect.GetGlobal(eGlobal.file_handle);
+            FileStream filestream= (FileStream)CSpect.GetGlobal(eGlobal.file_handle);
             string filename = (string)CSpect.GetGlobal(eGlobal.file_name);
 
-            int i = 1;
-            while (i < 256)
-            {
-                if (FileHandles[i] == null)
-                {
-                    FileHandles[i] = handle;
-                    FileNames[i] = filename;
-                    CSpect.SetGlobal(eGlobal.next_file_handle,i);
-                    return false;
-                }
-                i++;
-            }
-            return true;
+            int handle = FileSystem.SetFileHandle(filestream, filename);
+            if (handle < 0) return true;
+            CSpect.SetGlobal(eGlobal.next_file_handle, handle);
+            return false;
         }
 
 

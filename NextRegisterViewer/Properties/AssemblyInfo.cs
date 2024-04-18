@@ -5,11 +5,11 @@ using System.Runtime.InteropServices;
 // General Information about an assembly is controlled through the following 
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
-[assembly: AssemblyTitle("CopperDissassembler")]
+[assembly: AssemblyTitle("NextRegisterViewer")]
 [assembly: AssemblyDescription("")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("CopperDissassembler")]
+[assembly: AssemblyProduct("NextRegisterViewer")]
 [assembly: AssemblyCopyright("Copyright ©  2021")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
@@ -20,7 +20,7 @@ using System.Runtime.InteropServices;
 [assembly: ComVisible(false)]
 
 // The following GUID is for the ID of the typelib if this project is exposed to COM
-[assembly: Guid("93d54582-277e-4aca-a6ab-9cadf5ba1886")]
+[assembly: Guid("234eb7c2-c66d-4404-a893-0e1b945a132c")]
 
 // Version information for an assembly consists of the following four values:
 //
