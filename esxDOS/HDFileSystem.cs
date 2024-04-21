@@ -1,9 +1,11 @@
 ﻿using System;
+using System.CodeDom;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -14,8 +16,7 @@ namespace esxDOS
         /// <summary>Total number of open handles allowed</summary>
         public const int MAX_HANDLES = 256;
         /// <summary>Open handles</summary>
-        FileStream[] HandleLookUps;
-        string[] FileNames;
+        FileHandle[] HandleLookUps;
 
         // ******************************************************************************************************************************************************
         /// <summary>
@@ -24,13 +25,11 @@ namespace esxDOS
         // ******************************************************************************************************************************************************
         public HDFileSystem()
         {
-            HandleLookUps = new FileStream[MAX_HANDLES];
-            FileNames = new string[MAX_HANDLES];
+            HandleLookUps = new FileHandle[MAX_HANDLES];
 
             for (int i=0;i<MAX_HANDLES;i++)
             {
                 HandleLookUps[i] = null;
-                FileNames[i] = null;
             }
         }
 
@@ -46,7 +45,9 @@ namespace esxDOS
         public string GetName(int handle)
         {
             if(handle<0 || handle> MAX_HANDLES) return null;
-            return FileNames[handle];
+            FileHandle fhandle = HandleLookUps[handle];
+            if (fhandle == null) return null;
+            return fhandle.Name;
         }
 
         // ******************************************************************************************************************************************************
@@ -84,8 +85,11 @@ namespace esxDOS
             int handle = AllocHandle();
             if (handle <= 0) return -1;
 
-            HandleLookUps[handle] = filestream;
-            FileNames[handle] = name;
+            FileHandle fhandle = new FileHandle();
+            fhandle.File= filestream;
+            fhandle.Name= name;
+
+            HandleLookUps[handle] = fhandle;
             return handle;
         }
 
@@ -143,11 +147,15 @@ namespace esxDOS
             try
             {
                 FileStream file_handle = File.Open(path, mode, access, share);
-                HandleLookUps[handle]= file_handle;
+                FileHandle fhandle = new FileHandle();
+                fhandle.File= file_handle;
+                fhandle.Name = path;
+                HandleLookUps[handle] = fhandle;
                 return handle;
             }
             catch(Exception ex)
             {
+                HandleLookUps[handle] = null;
                 return -1;
             }
         }
@@ -162,14 +170,12 @@ namespace esxDOS
         {
             if (handle <= 0 || handle >= MAX_HANDLES) return false;
 
-            FileStream file_handle = HandleLookUps[handle];
+            FileHandle file_handle = HandleLookUps[handle];
             if( file_handle == null) return false;
 
-            file_handle.Flush();
             file_handle.Close();
 
             HandleLookUps[handle] = null;
-            FileNames[handle] = null;
             return true;
         }
 
@@ -204,7 +210,9 @@ namespace esxDOS
         {
             if (handle <= 0 || handle >= MAX_HANDLES) return -1;
 
-            FileStream file_handle = HandleLookUps[handle];
+            FileHandle file_handle = HandleLookUps[handle];
+            if(file_handle==null) return -1;
+
             int val = file_handle.Read(buffer, offset, size);
             return val;
         }
@@ -225,7 +233,9 @@ namespace esxDOS
         {
             if (handle <= 0 || handle >= MAX_HANDLES) return -1;
 
-            FileStream file_handle = HandleLookUps[handle];
+            FileHandle file_handle = HandleLookUps[handle];
+            if (file_handle == null) return -1;
+
             file_handle.Write(buffer, offset, size);
             return size;
         }
@@ -241,13 +251,15 @@ namespace esxDOS
         ///     New file position
         /// </returns>
         // ******************************************************************************************************************************************************
-        public int Seek(int handle, long offset, SeekOrigin origin)
+        public long Seek(int handle, long offset, SeekOrigin origin)
         {
             if (handle <= 0 || handle >= MAX_HANDLES) return -1;
 
-            FileStream file_handle = HandleLookUps[handle];
+            FileHandle file_handle = HandleLookUps[handle];
+            if (file_handle == null) return -1;
+
             long index = file_handle.Seek(offset, origin);
-            return (int)index;
+            return index;
         }
 
         // ******************************************************************************************************************************************************
@@ -263,7 +275,9 @@ namespace esxDOS
         {
             if (handle <= 0 || handle >= MAX_HANDLES) return -1;
 
-            FileStream file_handle = HandleLookUps[handle];
+            FileHandle file_handle = HandleLookUps[handle];
+            if (file_handle == null) return -1;
+
             return file_handle.Position;
         }
 

@@ -11,7 +11,12 @@ namespace esxDOS
     /// </summary>
     internal class WADFile
     {
-        int Size
+        // ***********************************************************************************************************************
+        /// <summary>
+        ///     Get length of the file in bytes
+        /// </summary>
+        // ***********************************************************************************************************************
+        int Length
         {
             get
             {
@@ -21,6 +26,46 @@ namespace esxDOS
         }
 
         /// <summary>Actual file data</summary>
-        byte[] Data;
+        public byte[] Data;
+        /// <summary>Filename</summary>
+        public string Name;
+        /// <summary>Is the file "dirty"?</summary>
+        public bool Dirty;
+
+
+        // ***********************************************************************************************************************
+        /// <summary>
+        ///     Create a new WAD file
+        /// </summary>
+        /// <param name="data"></param>
+        /// <param name="name"></param>
+        // ***********************************************************************************************************************
+        public WADFile(byte[] data, string name)
+        {
+            Data = data;
+            Name = name;
+            Dirty = false;
+        }
+
+        // ***********************************************************************************************************************
+        /// <summary>
+        ///     Create a new WAD file
+        /// </summary>
+        /// <param name="data"></param>
+        /// <param name="name"></param>
+        // ***********************************************************************************************************************
+        public WADFile(string name, int size = 16384)
+        {
+            if (size == 0)
+            {
+                Data = null;
+            }
+            else 
+            {
+                Data = new byte[size];
+            }            
+            Name = name;
+            Dirty = true;
+        }
     }
 }

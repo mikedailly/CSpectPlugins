@@ -70,6 +70,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Function.cs" />
     <Compile Include="iCSpect.cs" />
     <Compile Include="iPlugin.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

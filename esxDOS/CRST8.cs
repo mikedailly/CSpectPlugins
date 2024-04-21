@@ -219,7 +219,9 @@ namespace esxDOS
 
 
             // Used to pass a file handle to the system
-            F_SPECIAL = 0xDF
+            F_SPECIAL = 0xDF,
+            /// <summary>Extended WAD system flush all closed files to disk (if dirty)</summary>
+            F_FLUSHWAD = 0xE0
         };
 
         enum eCMD18
@@ -337,7 +339,6 @@ namespace esxDOS
 
             // Install the disk interface - this lets us replace it with a behind the scenes WAD system if we want....
             FileSystem = new HDFileSystem();
-
 
             Debug.WriteLine("RST 0x08 interface added");
 
@@ -941,6 +942,7 @@ namespace esxDOS
                 {
 
                     string CurrFile = FindFileName(OpenFileBuffer);
+                    if (CurrFile == null) CurrFile = OpenFileBuffer;
                     if (FileSystem.Exists(CurrFile))
                     {
                         OpenFileBuffer = CurrFile;
@@ -2245,12 +2247,39 @@ namespace esxDOS
                 case RST08.F_RMDIR: break;
 
                 case RST08.F_SPECIAL:       setC(SetFileHandle()); break;               // 0xAA
+                case RST08.F_FLUSHWAD:      FlushWAD(); break;
 
             }
             // send the registers back...
             CSpect.SetRegs(regs);
         }
 
+        //****************************************************************************
+        /// <summary>
+        ///     Flush all files, close them and write wad to disk if there are changes
+        /// </summary>
+        //****************************************************************************
+        [Function("flush_wad", "none", "Flush WAD writes - writing WAD file to disk")]
+        public bool FlushWAD()
+        {
+            if (WadFile != null)
+            {
+                WadFile.FlushToDisk();
+            }
+            return false;
+        }
 
+        //****************************************************************************
+        /// <summary>
+        ///     Setup the WAD system instead of single write file to disk mode
+        /// </summary>
+        //****************************************************************************
+        [Function("attach_wad", "none", "Flush WAD writes - writing WAD file to disk")]
+        public bool AttachWAD(string _filename)
+        {
+            WadFile = new WAD(_filename);
+            FileSystem = WadFile;
+            return false;
+        }
     }
 }
