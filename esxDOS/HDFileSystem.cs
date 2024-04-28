@@ -1,13 +1,6 @@
-﻿using System;
-using System.CodeDom;
-using System.Collections.Generic;
-using System.ComponentModel;
+﻿using Plugin;
+using System;
 using System.IO;
-using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace esxDOS
 {
@@ -296,6 +289,13 @@ namespace esxDOS
         {
             return File.Exists(filename);
         }
+
+        // ******************************************************************************************************************************************************
+        /// <summary>
+        ///     Flush all cached contents to disk
+        /// </summary>
+        // ******************************************************************************************************************************************************
+        public void FlushToDisk(){ }
 
     }
 }

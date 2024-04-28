@@ -29,7 +29,6 @@ namespace esxDOS
     // **********************************************************************
     public class CRST8 : iPlugin
     {
-        WAD WadFile;
         IFileIO FileSystem;
 
 
@@ -217,11 +216,8 @@ namespace esxDOS
             F_UNLINK = 0xAD,
             F_RENAME = 0xB0,
 
-
-            // Used to pass a file handle to the system
-            F_SPECIAL = 0xDF,
-            /// <summary>Extended WAD system flush all closed files to disk (if dirty)</summary>
-            F_FLUSHWAD = 0xE0
+            /// <summary>Extended flush all closed/cached files to disk (if dirty)</summary>
+            F_FLUSH   = 0xE0
         };
 
         enum eCMD18
@@ -436,22 +432,12 @@ namespace esxDOS
 
             if (_type == eAccess.Memory_EXE && _port == PC_Address)
             {
-                // special NEX loading mode
-                if (_id == ESXDOS_SETFILEHANDLE)
-                {
-                    SetFileHandle();
-                    _isvalid = true;
-                    return 0;
-                }
-                else
-                {
-                    int b = CSpect.GetNextRegister(0x50);
-                    if (b != 255) return 0;
+                int b = CSpect.GetNextRegister(0x50);
+                if (b != 255) return 0;
 
-                    _isvalid = true;
-                    DoFileOps();
-                    return (byte)0;
-                }
+                _isvalid = true;
+                DoFileOps();
+                return (byte)0;
             }
             else if (_type == eAccess.Port_Read && (_port & 0xff) == 0xEb)
             {
@@ -2244,10 +2230,9 @@ namespace esxDOS
                 case RST08.F_GETCWD:        setC(GetCurrentDirectory()); break;         // 0xA8
                 case RST08.F_CHDIR:         setC(SetCurrentDirectory()); break;         // 0xA9
                 case RST08.F_MKDIR:         setC(MakeDirectory()); break;               // 0xAA
-                case RST08.F_RMDIR: break;
+                case RST08.F_RMDIR:         break;
 
-                case RST08.F_SPECIAL:       setC(SetFileHandle()); break;               // 0xAA
-                case RST08.F_FLUSHWAD:      FlushWAD(); break;
+                case RST08.F_FLUSH:         Flush(); break;
 
             }
             // send the registers back...
@@ -2259,13 +2244,10 @@ namespace esxDOS
         ///     Flush all files, close them and write wad to disk if there are changes
         /// </summary>
         //****************************************************************************
-        [Function("flush_wad", "none", "Flush WAD writes - writing WAD file to disk")]
-        public bool FlushWAD()
+        [Function("flush", "none", "Flush any cached files to disk")]
+        public bool Flush()
         {
-            if (WadFile != null)
-            {
-                WadFile.FlushToDisk();
-            }
+            FileSystem.FlushToDisk();
             return false;
         }
 
@@ -2273,13 +2255,38 @@ namespace esxDOS
         /// <summary>
         ///     Setup the WAD system instead of single write file to disk mode
         /// </summary>
+        /// <param name="_filesystem">The file object</param>
+        /// <returns>
+        ///     true for okay
+        ///     false for error
+        /// </returns>
         //****************************************************************************
-        [Function("attach_wad", "none", "Flush WAD writes - writing WAD file to disk")]
-        public bool AttachWAD(string _filename)
+        [Function("attach_filesystem", "none", "Attach a new filesystem - replacing the current/default HD one")]
+        public bool AttachFilesystem(IFileIO _filesystem)
         {
-            WadFile = new WAD(_filename);
-            FileSystem = WadFile;
-            return false;
+            CloseAllHandles();
+            Flush();
+            FileSystem = _filesystem;
+            return true;
         }
+
+
+        //****************************************************************************
+        /// <summary>
+        ///     Allow us to add in an already open file to our internal systems
+        /// </summary>
+        /// <param name="_handle">The FileStream handle</param>
+        /// <param name="_filename">The name of the file we're adding</param>
+        /// <returns>
+        ///     A new "handle" that Z80 can then reference.
+        /// </returns>
+        //****************************************************************************
+        [Function("set_file_handle", "FileStream,string", "Add an already opened file handle to our internal systems")]
+        public int SetFileHandle(FileStream _handle, string _filename)
+        {
+            int handle = FileSystem.SetFileHandle(_handle, _filename);
+            return handle;
+        }
+
     }
 }

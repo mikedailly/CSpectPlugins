@@ -548,5 +548,14 @@ namespace Plugin
         // ------------------------------------------------------------
         byte[] LoadFile(string _name);
 
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Execute another plugin command
+        /// </summary>
+        /// <param name="_command">the command string to execute</param>
+        /// <param name="args">Any arguments needing to be passed</param>
+        /// <returns>any return or null</returns>
+        // ------------------------------------------------------------
+        object Execute(string _command, params object[] args);
     }
 }

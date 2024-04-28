@@ -1,20 +1,13 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using Plugin;
+using System;
 using System.IO;
-using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Text;
-using System.Threading.Tasks;
-using System.Xml.Linq;
 
 namespace esxDOS
 {
-    public class FileHandle : IFile, IDisposable
+    public class FileHandle : IDisposable
     {
         /// <summary>File handle - or null if in memory buffer is used</summary>
         public FileStream File;
-        /// <summary>in memory Buffer - or null if FileStream is used</summary>
-        public byte[] Data;
         /// <summary>Generic user data</summary>
         public object UserData;
         /// <summary>Disposable pattern</summary>
@@ -45,34 +38,13 @@ namespace esxDOS
 
         // ******************************************************************************************************************************************************
         /// <summary>
-        ///     Resize the Write Buffer
-        /// </summary>
-        // ******************************************************************************************************************************************************
-        public void ResizeBuffer()
-        {
-            byte[] NewBuffer = new byte[Data.Length+(Data.Length/2)];   // scale up
-            Array.Copy(Data,NewBuffer, Data.Length); 
-            Data = NewBuffer;
-        }
-
-        // ******************************************************************************************************************************************************
-        /// <summary>
         ///     Close the file
         /// </summary>
         // ******************************************************************************************************************************************************
         public void Close()
         {
-            if( Data==null)
-            {
-                File.Flush();
-                File.Close();
-            }
-            else
-            {
-                byte[] FinalBuffer = new byte[Length];
-                Array.Copy(Data, FinalBuffer, Length);
-                Data = FinalBuffer;
-            }
+            File.Flush();
+            File.Close();
         }
 
 
@@ -89,24 +61,8 @@ namespace esxDOS
         // ******************************************************************************************************************************************************
         public int Read(byte[] buffer, int offset, int size)
         {
-            if (Data != null)
-            {
-                int counter = 0;
-                while(Position<Length && size>0)
-                {
-                    if (offset >= buffer.Length) return counter;
-
-                    buffer[offset++] = Data[Position++];
-                    size--;
-                    counter++;
-                }
-                return counter;
-            }
-            else
-            {
-                int bytesread = File.Read(buffer, offset, size);
-                return bytesread;
-            }
+            int bytesread = File.Read(buffer, offset, size);
+            return bytesread;
         }
 
         // ******************************************************************************************************************************************************
@@ -190,27 +146,8 @@ namespace esxDOS
         // ******************************************************************************************************************************************************
         public int Write(byte[] buffer, int offset, int size)
         {
-            if (Data != null)
-            {
-                int counter = 0;
-                while (size >0 )
-                {
-                    if (Position >= Data.Length) ResizeBuffer();
-
-                    if (offset >= buffer.Length) break;
-                    Data[Position++] = buffer[offset++];
-                    if (Position > Length) Length++;
-
-                    size--;
-                    counter++;
-                }
-                return counter;
-            }
-            else
-            {
-                File.Write(buffer, offset, size);
-                return size;
-            }
+            File.Write(buffer, offset, size);
+            return size;
         }
 
         // ******************************************************************************************************************************************************
@@ -315,30 +252,7 @@ namespace esxDOS
         // ******************************************************************************************************************************************************
         public long Seek(long offset, SeekOrigin origin)
         {
-            if(Data != null)
-            {
-                switch(origin)
-                {
-                    case SeekOrigin.End:
-                        Position = Length - offset;
-                        if (Position < 0) Position = 0;
-                        return Position;
-                    case SeekOrigin.Current:
-                        Position = Position + offset;
-                        if (Position < 0) Position = 0;
-                        if (Position >= Length) Position = Length - 1;
-                        return Position;
-                    case SeekOrigin.Begin:
-                    default:
-                        Position = offset;
-                        if (Position >= Length) Position = Length - 1;
-                        return Position;
-                }
-            }
-            else
-            {
-                return File.Seek(offset, origin);
-            }
+            return File.Seek(offset, origin);
         }
 
         // ******************************************************************************************************************************************************
@@ -359,7 +273,6 @@ namespace esxDOS
                         File.Dispose();
                         File = null;
                     }
-                    Data = null;
                 }
 
                 // TODO: free unmanaged resources (unmanaged objects) and override finalizer
