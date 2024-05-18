@@ -29,9 +29,6 @@ namespace esxDOS
     // **********************************************************************
     public class CRST8 : iPlugin
     {
-        IFileIO FileSystem;
-
-
         #region Plugin interface
         /// <summary>Special ID passed in to pass a pre-opened filehandle and return a NEXT file handle</summary>
         public const int ESXDOS_SETFILEHANDLE = unchecked((int)0xdeadc0de);
@@ -46,6 +43,9 @@ namespace esxDOS
         public const int IM0 = 0;
         public const int IM1 = 1;
         public const int IM2 = 2;
+
+        IFileIO FileSystem;
+        bool Initialised = false;
 
         /// <summary>Z80 CPU flag bits</summary>
         [Flags]
@@ -233,16 +233,6 @@ namespace esxDOS
         int CurrentDrive = 0;
         /// <summary>Simple buffer for loading in data before poking into memory - could go direct in many cases</summary>
         public byte[] filebuffer = new byte[65536];                    // buffer for reading in file
-        /// <summary>You can have upto 255 files open at once</summary>
-        public int[] FileHandles = new int[256];                         // Div MMC open file handles
-        /// <summary>The "up to" 255 file names that are open</summary>
-        public string[] FileNames = new string[256];
-        /// <summary>Used when the whole file is loaded into memory - not streamed</summary>
-        public byte[][] pFiles = new byte[256][];                               // Div MMC open files data?
-        /// <summary>File pointers for when the whole file is loaded into memory</summary>
-        public int[] FilePointers = new int[256];                        // file pointer....
-        /// <summary>File sizes for when the whole file is loaded into memory</summary>
-        public int[] FileSize = new int[256];
         /// <summary>The current MMC card path</summary>
         public string MMCPath = Environment.CurrentDirectory + "\\";
         /// <summary>Current Directory, relative to the MMC path</summary>
@@ -359,6 +349,7 @@ namespace esxDOS
             //ports.Add(new sIO("<ctrl><alt>c", 0, eAccess.KeyPress));                   // Key press callback
             //ports.Add(new sIO(0xfe, eAccess.Port_Write));
 
+            Initialised = true;
             return ports;
         }
 
@@ -497,7 +488,7 @@ namespace esxDOS
                         FileSystem.Read(g_StreamHandle, SectorBuffer, SECTOR_BUFFER_OFFEST, 512);
                     }
                     catch {
-                        int o = 12;
+                        //int o = 12;
                     }
                     ProcessingCMD18 = eCMD18.Reading;
                 }
@@ -643,7 +634,7 @@ namespace esxDOS
                 case 5: CMD.crc = _byte; break;
             }
             CMD_Read_Index++;
-            if (CMD_Read_Index == 6)
+            if ((CMD_Read_Index == 5 && (_byte&0xc0)==0x40) ||  (CMD_Read_Index == 6) )
             {
                 if (g_StreamHandle >0)
                 {
@@ -1239,7 +1230,7 @@ namespace esxDOS
             if (regs.A == 0) return true;
 
 
-            string name = FileNames[regs.A];
+            string name = FileSystem.GetName(regs.A);
 
             int address = regs.IX;
             CSpect.Poke((UInt16)address++, 0);        // drive
@@ -1287,8 +1278,6 @@ namespace esxDOS
                 return true;
             }
 
-
-
             if ((regs.A != CurrentDrive) && (regs.A != '*') && (regs.A != '$'))
             {
                 regs.A = 11;
@@ -1300,6 +1289,7 @@ namespace esxDOS
             int add = regs.IX;
             int len = 0;
             string name = CurrentPath;
+            if (!CurrentPath.EndsWith("\\")) name += "\\";
             while (len < 1023)
             {
                 byte b = CSpect.Peek((UInt16)add++);
@@ -1658,7 +1648,10 @@ namespace esxDOS
         //****************************************************************************
         private void CloseAllHandles()
         {
-            FileSystem.CloseAll();
+            if (FileSystem != null)
+            {
+                FileSystem.CloseAll();
+            }
             EndStream();
         }
 
