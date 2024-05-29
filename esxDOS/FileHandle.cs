@@ -20,7 +20,7 @@ namespace esxDOS
         public long Position { get; set; }
         
         /// <summary>Length in bytes of the file - NOT the length of the buffer, which may be larger</summary>
-        public long Length { get; set; }
+        public long Length { get { return File.Length;  } }
 
 
 
@@ -33,7 +33,6 @@ namespace esxDOS
         {
             Name=string.Empty; 
             Position=-1;
-            Length=0;
         }
 
         // ******************************************************************************************************************************************************

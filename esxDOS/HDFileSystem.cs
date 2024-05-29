@@ -146,7 +146,7 @@ namespace esxDOS
                 HandleLookUps[handle] = fhandle;
                 return handle;
             }
-            catch(Exception ex)
+            catch //(Exception ex)
             {
                 HandleLookUps[handle] = null;
                 return -1;

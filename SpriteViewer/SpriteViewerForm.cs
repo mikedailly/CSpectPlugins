@@ -132,8 +132,8 @@ namespace SpriteViewer
             CreateFont();
 
             int h = drawFont.Height;
-            float x = 10.0F;
-            float y = 10.0F;
+            //float x = 10.0F;
+            //float y = 10.0F;
             int Address = StartAddress;
             SizeF size = _g.MeasureString("MMMMMM", drawFont);
             int w = (int) size.Width;
