@@ -81,6 +81,7 @@ namespace esxDOS
             FileHandle fhandle = new FileHandle();
             fhandle.File= filestream;
             fhandle.Name= name;
+            fhandle.Position = filestream.Position;
 
             HandleLookUps[handle] = fhandle;
             return handle;
@@ -289,6 +290,22 @@ namespace esxDOS
         {
             return File.Exists(filename);
         }
+
+
+        // ******************************************************************************************************************************************************
+        /// <summary>
+        ///     Get a list of ffiles from the requested folder
+        /// </summary>
+        /// <param name="folder">Folder to get files from</param>
+        /// <returns>
+        ///     Array of files in the folder - can be empty
+        /// </returns>
+        // ******************************************************************************************************************************************************
+        public string[] GetFiles(string folder)
+        {
+            return Directory.GetFiles(folder);
+        }
+
 
         // ******************************************************************************************************************************************************
         /// <summary>

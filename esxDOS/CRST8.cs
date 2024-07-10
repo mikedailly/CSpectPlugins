@@ -778,13 +778,13 @@ namespace esxDOS
         /// <returns>
         /// </returns>
         //****************************************************************************
-        public string FindFileName(string _filename)
+        public string FindFileName(string _filename)        // Need a WAD version of this
         {
             string p = Path.GetDirectoryName(_filename);
             if (LastFolder != p || FindFiles == null)
             {
                 // cache this directory
-                FindFiles = Directory.GetFiles(p);
+                FindFiles = FileSystem.GetFiles(p);
                 LastFolder = p;
             }
             string filename = Path.GetFileName(_filename).ToLower();
