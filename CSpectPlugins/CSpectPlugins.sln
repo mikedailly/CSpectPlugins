@@ -21,8 +21,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Profiler", "..\Profiler\Pro
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FileAssociate", "..\FileAssociate\FileAssociate.csproj", "{7FBC889D-403D-4477-998B-A1E51455D6DE}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ay8912", "..\ay8912\ay8912.csproj", "{C352CBBD-3F14-4645-A464-B35B5E3A2F37}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
