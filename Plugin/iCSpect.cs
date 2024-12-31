@@ -222,7 +222,7 @@ namespace Plugin
     ///     Interface back intgo #CSpect
     /// </summary>
     // ********************************************************************************************************************************
-    public interface iCSpect
+    public unsafe interface iCSpect
     {
         // ------------------------------------------------------------
         /// <summary>
@@ -536,7 +536,7 @@ namespace Plugin
         ///     Gets the colours we actually DRAW with (what next colours MAP to)
         /// </summary>
         // ------------------------------------------------------------
-        uint[] Get32BITColours();
+        uint* Get32BITColours();
 
         // ------------------------------------------------------------
         /// <summary>

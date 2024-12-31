@@ -2275,11 +2275,10 @@ namespace esxDOS
         /// </returns>
         //****************************************************************************
         [Function("set_file_handle", "FileStream,string", "Add an already opened file handle to our internal systems")]
-        public int SetFileHandle(FileStream _handle, string _filename)
+        public int SetFileHandle(Stream _handle, string _filename)
         {
             int handle = FileSystem.SetFileHandle(_handle, _filename);
             return handle;
         }
-
     }
 }

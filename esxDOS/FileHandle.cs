@@ -7,7 +7,7 @@ namespace esxDOS
     public class FileHandle : IDisposable
     {
         /// <summary>File handle - or null if in memory buffer is used</summary>
-        public FileStream File;
+        public Stream File;
         /// <summary>Generic user data</summary>
         public object UserData;
         /// <summary>Disposable pattern</summary>

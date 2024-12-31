@@ -73,7 +73,7 @@ namespace esxDOS
         ///     File handle
         /// </returns>
         // ******************************************************************************************************************************************************
-        public int SetFileHandle(FileStream filestream, string name)
+        public int SetFileHandle(Stream filestream, string name)
         {
             int handle = AllocHandle();
             if (handle <= 0) return -1;

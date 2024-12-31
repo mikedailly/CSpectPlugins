@@ -375,7 +375,7 @@ namespace NextRegisterViewer
         /// <param name="_BBB">end of line spacing and newline</param>
         /// <returns>Formatted string for tool tips</returns>
         // ***************************************************************************************************************************
-        public string GetReg0x14(int _v, string _BBB)
+        public unsafe string GetReg0x14(int _v, string _BBB)
         {
             int r, g, b;
             b = _v & 3;
@@ -384,7 +384,7 @@ namespace NextRegisterViewer
             string s = string.Format("Global Transparency Colour: \t${0:X2}" +_BBB+
                           "\tR:{1}\tG:{2}\tB:{3}", _v, r, g, b);
 
-            UInt32[] cols = CSpect.Get32BITColours();
+            UInt32* cols = CSpect.Get32BITColours();
 
             int h = drawFont.Height;
             TTItem item = new TTItem();
