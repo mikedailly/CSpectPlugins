@@ -384,7 +384,7 @@ namespace NextRegisterViewer
             string s = string.Format("Global Transparency Colour: \t${0:X2}" +_BBB+
                           "\tR:{1}\tG:{2}\tB:{3}", _v, r, g, b);
 
-            UInt32* cols = CSpect.Get32BITColours();
+            UInt32* pCols = CSpect.Get32BITColours();
 
             int h = drawFont.Height;
             TTItem item = new TTItem();
@@ -392,7 +392,7 @@ namespace NextRegisterViewer
             item.Y = h-4;
             item.Width = 16;
             item.Height= 16;
-            item.Colour = cols[_v<<1];
+            item.Colour = pCols[_v<<1];
             item.TTType = eTTItemType.ColourBox;
             TTItems.Add(item);
             return s;

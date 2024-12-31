@@ -536,7 +536,7 @@ namespace Plugin
         ///     Gets the colours we actually DRAW with (what next colours MAP to)
         /// </summary>
         // ------------------------------------------------------------
-        uint* Get32BITColours();
+        unsafe uint* Get32BITColours();
 
         // ------------------------------------------------------------
         /// <summary>
