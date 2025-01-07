@@ -36,10 +36,10 @@
             this.vAddressScrollBar.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
             | System.Windows.Forms.AnchorStyles.Right)));
             this.vAddressScrollBar.LargeChange = 100;
-            this.vAddressScrollBar.Location = new System.Drawing.Point(258, 9);
+            this.vAddressScrollBar.Location = new System.Drawing.Point(531, -1);
             this.vAddressScrollBar.Maximum = 1024;
             this.vAddressScrollBar.Name = "vAddressScrollBar";
-            this.vAddressScrollBar.Size = new System.Drawing.Size(20, 597);
+            this.vAddressScrollBar.Size = new System.Drawing.Size(24, 822);
             this.vAddressScrollBar.TabIndex = 0;
             this.vAddressScrollBar.Scroll += new System.Windows.Forms.ScrollEventHandler(this.vAddressScrollBar_Scroll);
             this.vAddressScrollBar.ValueChanged += new System.EventHandler(this.vScrollBar1_ValueChanged);
@@ -48,7 +48,8 @@
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(287, 615);
+            this.BackColor = System.Drawing.SystemColors.Window;
+            this.ClientSize = new System.Drawing.Size(553, 820);
             this.Controls.Add(this.vAddressScrollBar);
             this.DoubleBuffered = true;
             this.Name = "CopperDissForm";
