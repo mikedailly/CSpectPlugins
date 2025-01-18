@@ -157,6 +157,7 @@
             this.DoubleBuffered = true;
             this.Name = "SpriteViewerForm";
             this.Text = "Sprite Viewer";
+            this.FormClosing += new System.Windows.Forms.FormClosingEventHandler(this.SpriteViewerForm_FormClosing);
             this.FormClosed += new System.Windows.Forms.FormClosedEventHandler(this.SpriteViewerForm_FormClosed);
             this.Load += new System.EventHandler(this.Form1_Load);
             this.ResizeEnd += new System.EventHandler(this.SpriteViewerForm_ResizeEnd);

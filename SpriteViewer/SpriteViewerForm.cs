@@ -19,7 +19,7 @@ namespace SpriteViewer
     public partial class SpriteViewerForm : Form
     {
         /// <summary>Current copper memory</summary>
-        byte[] CopperMemory;
+        byte[] SpriteMemory;
 
         /// <summary>Current viewing address</summary>
         int StartAddress = 0;
@@ -44,16 +44,20 @@ namespace SpriteViewer
 
         Bitmap[] SpriteBitmap;
         bool first_time = true;
+        SpriteViewerPlugin Plugin;
+
         // ******************************************************************************************
         /// <summary>
         ///     Create copper disassembler
         /// </summary>
-        /// <param name="_CopperMemory">reference to copper memory</param>
+        /// <param name="_SpriteMemory">reference to copper memory</param>
         /// <param name="_CopperIsWritten">reference to coppy flags</param>
+        /// <param name="_plugin">The pluging object</param>
         // ******************************************************************************************
-        public SpriteViewerForm(byte[] _CopperMemory)
+        public SpriteViewerForm(byte[] _SpriteMemory, SpriteViewerPlugin _plugin)
         {
-            CopperMemory = _CopperMemory;
+            Plugin = _plugin;
+            SpriteMemory = _SpriteMemory;
 
             InitializeComponent();
 
@@ -311,6 +315,12 @@ namespace SpriteViewer
             PaletteOffset = b.SelectedIndex * 16;
             this.Invalidate();
             
+        }
+
+        private void SpriteViewerForm_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            Plugin.OpenSpriteWindow = false;
+            SpriteViewerPlugin.Active = false;
         }
     }
 }

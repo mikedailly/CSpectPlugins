@@ -29,7 +29,7 @@ namespace SpriteViewer
     ///     The Sprite Viewer
     /// </summary>
     // *********************************************************************************************************
-    class SpriteViewerPlugin : iPlugin
+    public class SpriteViewerPlugin : iPlugin
     {
         /// <summary>CSpect emulator interface</summary>
         iCSpect CSpect;
@@ -43,7 +43,7 @@ namespace SpriteViewer
 
         bool doinvalidate = false;
         bool update_sprite_shapes = true;
-        bool OpenSpriteWindow = false;
+        public bool OpenSpriteWindow = false;
 
         WindowWrapper hwndWrapper;
         // *********************************************************************************************************
@@ -167,7 +167,9 @@ namespace SpriteViewer
                 if (!Active)
                 {
                     Active = true;
-                    form = new SpriteViewerForm(SpriteMemory);
+                    doinvalidate = true;
+                    update_sprite_shapes = true;
+                    form = new SpriteViewerForm(SpriteMemory, this);
                     form.Show();
                 }
                 OpenSpriteWindow = false;
@@ -199,3 +201,4 @@ namespace SpriteViewer
         }
     }
 }
+
