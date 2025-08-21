@@ -1,6 +1,6 @@
 ﻿# DeZog CSpect Plugin
 
-This Dezog  CSpect Plugin allows to connect [DeZog](https://github.com/maziac/DeZog) with [CSpect](http://www.cspect.org).
+This Dezog CSpect Plugin allows to connect [DeZog](https://github.com/maziac/DeZog) with [CSpect](http://www.cspect.org).
 I.e. you can use the DeZog IDE and run/debug your program in CSpect.
 
 This plugin establishes a listening socket.
@@ -14,6 +14,7 @@ The plugin supports DZRP v2.0.0. With the following functionality:
 - Get memory content
 - Get register content
 - Setting breakpoints
+- Setting interrupt enable flag
 - Get sprite patterns and attributes
 
 
@@ -21,7 +22,7 @@ The plugin supports DZRP v2.0.0. With the following functionality:
 
 The plugin can be compiled with Visual Studio (19). It has been built with VS on a Mac.
 
-You can find precompiled DLL [here](https://github.com/maziac/DeZogPlugin/releases).
+You can find the precompiled DLL [here](https://github.com/maziac/DeZogPlugin/releases).
 
 Place the DeZogPlugin.dll in the root directory of CSpect (i.e. at the same level as the CSpect.exe program).
 Once you start CSpect it will automatically start the plugin.
@@ -43,9 +44,9 @@ mono CSpect.exe -w4 -zxnext -nextrom -exit -brk -tv
 
 # Build
 
-If the Plugin.dll changes in a new version of CSpect the DeZog plugin needs to be recompiled.
+If the Plugin.dll changes, a new version of CSpect the DeZog plugin needs to be recompiled.
 Therefore the Plugin.dll needs to be referenced inside the DeZog plugin project.
-In the Cpect directory a link can be made (ln) to the dll, so it is not required each time to copy the dll.
+In the CSpect directory a link can be made (ln) to the dll, so it is not required each time to copy the dll.
 (Note: a macOS link via desktop is not working, use commandline "ln -s".)
 
 ## Release vs. Debug build

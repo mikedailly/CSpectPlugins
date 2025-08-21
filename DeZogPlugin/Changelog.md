@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.3.0
+- Added DZRP commands:
+  - CMD_INTERRUPT_ON_OFF
+  - CMD_EXEC_ASM
+  - CMD_WRITE_PORT
+  - CMD_READ_PORT
+
+## 2.2.0
+- Aligned with https://github.com/mikedailly/CSpectPlugins/tree/main/DeZogPlugin
+
 ## 2.1.1
 - Integrated into the #CSpect mainline and plugin interface updated.
 
