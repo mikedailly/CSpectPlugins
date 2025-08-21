@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
@@ -16,8 +15,8 @@ namespace DeZogPlugin
     public enum DZRP {
         // ZXNext: All Commands available in ZXNext (need to be consecutive)
         CMD_INIT = 1,
-        CMD_CLOSE = 2,
 
+        CMD_CLOSE = 2,
         CMD_GET_REGISTERS = 3,
         CMD_SET_REGISTER = 4,
         CMD_WRITE_BANK = 5,
@@ -37,6 +36,12 @@ namespace DeZogPlugin
         // Sprites
         CMD_GET_SPRITES = 18,
         CMD_GET_SPRITE_PATTERNS = 19,
+
+        // Port and misc
+        CMD_READ_PORT = 20,
+        CMD_WRITE_PORT = 21,
+        CMD_EXEC_ASM = 22,
+        CMD_INTERRUPT_ON_OFF = 23,
 
         // Breakpoint
         CMD_ADD_BREAKPOINT = 40,
@@ -98,11 +103,11 @@ namespace DeZogPlugin
     /// <remarks>
     ///     Message:
     ///      int Length: The length of the following bytes containing Command. Little endian. Size= 4.
-    ///     
+    ///
     ///     byte SeqNo:  Sequence number (must be returned in response)
     ///      byte Command: UART_DATA.
     ///      Payload bytes: The data
-    ///     
+    ///
     ///      A client may connect at anytime.
     ///      A connection is terminated only by the client.
     ///      If a connection has been terminated a new connection can be established.
@@ -125,7 +130,7 @@ namespace DeZogPlugin
 
         ///<summary>Stores the received sequence number.</summary>
         protected static byte receivedSeqno = 0;
-        
+
 
         /// <summary>
         ///     Call this to start listiening on 'Port'. Is asynchronous, i.e.not blocking.
@@ -137,15 +142,15 @@ namespace DeZogPlugin
             // Reset Command class.
             Commands.Reset();
 
-            // Establish the local endpoint for the socket.  
+            // Establish the local endpoint for the socket.
             IPAddress ipAddress = IPAddress.Loopback;   // localhost
             IPEndPoint localEndPoint = new IPEndPoint(ipAddress, Port);
 
-            // Create a TCP/IP socket.  
+            // Create a TCP/IP socket.
             Socket listener = new Socket(ipAddress.AddressFamily,
                 SocketType.Stream, ProtocolType.Tcp);
 
-            // Bind the socket to the local endpoint and listen for incoming connections.  
+            // Bind the socket to the local endpoint and listen for incoming connections.
             try
             {
                 listener.Bind(localEndPoint);
@@ -153,12 +158,13 @@ namespace DeZogPlugin
 
                 Log.WriteLine("Waiting for a connection on port {0} (localhost)...", Port);
 
-                // Start an asynchronous socket to listen for connections.  
+                // Start an asynchronous socket to listen for connections.
                 listener.BeginAccept(new AsyncCallback(AcceptCallback), listener);
             }
             catch (Exception e)
             {
-                Log.WriteLine(e.ToString());
+                Log.WriteLine("Could not open port {0} (localhost)...", Port);
+                Log.WriteLine("Error: {0}", e.ToString());
             }
         }
 
@@ -176,12 +182,12 @@ namespace DeZogPlugin
             // Wait a little bit (for debugger to stop)
             Thread.Sleep(500);
 
-            // Get the socket that handles the client request.  
+            // Get the socket that handles the client request.
             Socket listener = (Socket)ar.AsyncState;
             Socket handler = listener.EndAccept(ar);
             listener.Close();
 
-            // Create the state object.  
+            // Create the state object.
             StateObject state = new StateObject();
             state.workSocket = handler;
             handler.BeginReceive(state.buffer, 0, StateObject.BufferSize, 0, new AsyncCallback(ReadCallback), state);
@@ -196,20 +202,20 @@ namespace DeZogPlugin
         /// </summary>
         public static void ReadCallback(IAsyncResult ar)
         {
-            // from the asynchronous state object.  
+            // from the asynchronous state object.
             StateObject state = (StateObject)ar.AsyncState;
             Socket handler = state.workSocket;
 
             try
             {
-                // Retrieve the state object and the handler socket  
+                // Retrieve the state object and the handler socket
                 if (receivedSeqno != 0)
                 {
                     // If this happens a response has not been sent for the previous message.
                     throw new Exception("Message received before command last response was sent.");
                 }
 
-                // Read data from the client socket.   
+                // Read data from the client socket.
                 int bytesRead = handler.EndReceive(ar);
                 if (Log.Enabled)
                     Log.WriteLine("bytesRead={0}, MsgLength={1}", bytesRead, state.MsgLength);
@@ -231,7 +237,7 @@ namespace DeZogPlugin
                 // Add data
                 List<byte> readData = new List<byte>(state.buffer);
                 if (Log.Enabled)
-                { 
+                {
                     Log.WriteLine("Data before: " + GetStringFromData(state.Data.ToArray()));
                     Log.WriteLine("Added data:  " + GetStringFromData(readData.ToArray(), 0, bytesRead));
                 }
@@ -380,6 +386,23 @@ namespace DeZogPlugin
 
                 case DZRP.CMD_GET_SPRITE_PATTERNS:
                     Commands.GetSpritePatterns();
+                    break;
+
+
+                case DZRP.CMD_READ_PORT:
+                    Commands.ReadPort();
+                    break;
+
+                case DZRP.CMD_WRITE_PORT:
+                    Commands.WritePort();
+                    break;
+
+                case DZRP.CMD_EXEC_ASM:
+                    Commands.ExecAsm();
+                    break;
+
+                case DZRP.CMD_INTERRUPT_ON_OFF:
+                    Commands.InterruptOnOff();
                     break;
 
 
@@ -567,10 +590,10 @@ namespace DeZogPlugin
         {
             try
             {
-                // Retrieve the socket from the state object.  
+                // Retrieve the socket from the state object.
                 Socket handler = (Socket)ar.AsyncState;
 
-                // Complete sending the data to the remote device.  
+                // Complete sending the data to the remote device.
                 int bytesSent = handler.EndSend(ar);
                 if (Log.Enabled)
                     Log.WriteLine("Sent {0} bytes to client.", bytesSent);

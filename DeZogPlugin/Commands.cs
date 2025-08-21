@@ -1,9 +1,5 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Net;
-using System.Net.Sockets;
-using System.Text;
 using System.Threading;
 
 
@@ -86,6 +82,10 @@ namespace DeZogPlugin
         // Stores if a PAUSE command has been sent.
         protected static bool ManualBreak = false;
 
+        // The maximum amount of bytes that can be executed by CMD_EXEC_ASM.
+        protected static int PAYLOAD_EXEC_ASM = 1024;  // 1k
+        // The address to use for execution.
+        protected static int EXEC_ASM_START_ADDR = 0x8000;
 
         /**
          * General initalization function.
@@ -181,9 +181,9 @@ namespace DeZogPlugin
 
 
         /**
-         * Start/stop debugger.
-         * @param start Starts the CPU if true (currently this is the only operation mode)
-         */
+        * Start/stop debugger.
+        * @param start Starts the CPU if true (currently this is the only operation mode)
+        */
         protected static void StartCpu(bool start)
         {
 
@@ -376,13 +376,13 @@ namespace DeZogPlugin
             }
             if (counter == 1000)
             {
-                stopwatch.Stop();              
+                stopwatch.Stop();
                 Console.WriteLine("RunTime: " + stopwatch.ElapsedMilliseconds);
                 counter = 0;
             }
             */
 
-            
+
             // Return if not initialized
             if (BreakpointMap == null)
                 return;
@@ -426,7 +426,7 @@ namespace DeZogPlugin
             int bank = cspect.GetNextRegister((byte)(0x50 + slot));
             //Log.WriteLine("Debugger stopped: bank {0}, slot {1}", bank, slot);
             int pcLong = ((bank+1)<<16) + pc;
-            if (Log.Enabled)   
+            if (Log.Enabled)
                 Log.WriteLine("Debugger stopped at 0x{0:X4} (long address=0x{1:X6})", pc, pcLong);
 
             // Disable temporary breakpoints (64k addresses)
@@ -729,23 +729,22 @@ namespace DeZogPlugin
         }
 
 
-
         /**
-         * Sets a breakpoint and returns an ID (!=0).
+         * Sets a breakpoint without putting it in the map.
          * The address is the physical address.
          */
-        protected static ushort SetBreakpoint(int address)
+        protected static void SetBreakpointRaw(int address)
         {
             if (Log.Enabled)
                 Log.WriteLine("  SetBreakpoint: 0x{0:X6}", address);
             // Set in CSpect
             byte bank = (byte)(address >> 16);
-            if(bank>0)
+            if (bank > 0)
             {
                 // Adjust physical address
                 int physAddress = (address & 0x1FFF) + ((bank - 1) << 13);
                 Main.CSpect.Debugger(Plugin.eDebugCommand.SetPhysicalBreakpoint, physAddress);
-                if(Log.Enabled)
+                if (Log.Enabled)
                     Log.WriteLine("  Phys. breakpoint 0x{0:X6}", physAddress);
             }
             else
@@ -755,6 +754,17 @@ namespace DeZogPlugin
                 if (Log.Enabled)
                     Log.WriteLine("  Normal breakpoint 0x{0:X4}", address);
             }
+        }
+
+
+        /**
+         * Sets a breakpoint and returns an ID (!=0).
+         * The address is the physical address.
+         * Puts the breakpoint additionally in the map.
+         */
+        protected static ushort SetBreakpoint(int address)
+        {
+            SetBreakpointRaw(address);
             // Add to array (ID = element position + 1)
             BreakpointMap.Add(++LastBreakpointId, address);
             return LastBreakpointId;
@@ -821,7 +831,7 @@ namespace DeZogPlugin
                     //CpuRunning = true; Need to be locked
                     //cspect.Debugger(Plugin.eDebugCommand.StepOver);
                     break;
-                    
+
                 case AlternateCommand.STEP_OUT: // Step out
                     // Respond
                     CSpectSocket.SendResponse();
@@ -1024,15 +1034,14 @@ namespace DeZogPlugin
             CSpectSocket.GetDataByte();
             // Start of memory
             ushort address = CSpectSocket.GetDataWord();
-            // Get size
+            // Get memory data
             var data = CSpectSocket.GetRemainingData();
-            ushort size = (ushort)data.Count;
 
             // Write memory
             var cspect = Main.CSpect;
             byte[] values = data.ToArray();
             cspect.Poke(address, values);
-            
+
             // Respond
             CSpectSocket.SendResponse();
         }
@@ -1063,6 +1072,224 @@ namespace DeZogPlugin
             CSpectSocket.SendResponse(Data);
         }
 
+
+        /**
+         * Reads the value at a port address.
+         */
+        public static void ReadPort()
+        {
+            // Get address
+            ushort address = CSpectSocket.GetDataWord();
+
+            // Get port value
+            var cspect = Main.CSpect;
+            var value = cspect.InPort(address);
+
+            // No error
+            InitData(1);
+            SetByte(value);
+
+            // Respond
+            CSpectSocket.SendResponse(Data);
+
+            if (Log.Enabled)
+                Log.WriteLine("ReadPort at address=0x{0:X4}: 0x{1:X2}", address, value);
+        }
+
+
+        /**
+         * Sets the value at a port address.
+         */
+        public static void WritePort()
+        {
+            // Get address
+            ushort address = CSpectSocket.GetDataWord();
+            // Get value
+            byte value = CSpectSocket.GetDataByte();
+
+            // Set port value
+            var cspect = Main.CSpect;
+            cspect.OutPort(address, value);
+
+            // Respond
+            CSpectSocket.SendResponse();
+
+            if (Log.Enabled)
+                Log.WriteLine("WritePort at address=0x{0:X4}: 0x{1:X2}", address, value);
+        }
+
+
+
+        /**
+         * Execute dbugger comamnd (run, enter (stop), stepOver ...)
+         * and wait until it finished.
+         */
+        protected static void DbgExec(Plugin.eDebugCommand dbgCmd)
+        {
+            bool shouldRun = (dbgCmd == Plugin.eDebugCommand.Run);
+            var cspect = Main.CSpect;
+
+            // Debugger execute
+            cspect.Debugger(dbgCmd);
+
+            // Wait until finished
+            bool running;
+            do
+            {
+                // Wait a little bit
+                Thread.Sleep(1);    // ms.
+                // Check if done
+                var debugState = cspect.Debugger(Plugin.eDebugCommand.GetState); // 0 = running
+                running = (debugState == 0);
+                //Log.WriteLine("DbgExec: debugState={0}", debugState);
+            } while (running != shouldRun);
+        }
+
+
+        /**
+         * Executes a short piece of assembler object code.
+         * Saves and clears the breakpoints.
+         * Saves the registers.
+         * Saves a piece of data from the memory.
+         * Replaces it with
+         * - a CALL to an address with the received code
+         * - the received code
+         * - a RET at the end of the received code
+         * Executes it, by stepping over the CALL. (No need to create a temporary breakpoint and potentially get in conflict with the Tick method.)
+         * Restores the saved memory.
+         * Restores the registers.
+         * Restores the breakpoints.
+         */
+        public static void ExecAsm()
+        {
+            if (Log.Enabled)
+                Log.WriteLine("ExecAsm entered");
+
+            // Prepare data for the response message
+            InitData(9);
+
+            // Get object code
+            var code = CSpectSocket.GetRemainingData();
+            // Check state
+            var cspect = Main.CSpect;
+            var debugState = cspect.Debugger(Plugin.eDebugCommand.GetState);
+            bool running = (debugState == 0);
+
+            // Error code
+            byte errorCode = 0;
+            if (code.Count > PAYLOAD_EXEC_ASM)
+                errorCode = 1;
+            if (running)
+                errorCode = 2;
+
+            // Check for  error
+            if (errorCode != 0)
+            {
+                // Return an error
+                SetByte(errorCode); // Error
+                SetWord(0); // AF
+                SetWord(0); // BC
+                SetWord(0); // DE
+                SetWord(0); // HL
+                // Respond
+                CSpectSocket.SendResponse(Data);
+                return;
+            }
+
+            // Clear all breakpoints
+            cspect.Debugger(Plugin.eDebugCommand.ClearAllBreakpoints);
+
+            // Save registers ad interrupt state
+            var saveRegs = cspect.GetRegs();
+
+            // Save memory
+            int callCodeCount = 4;
+            int retCount = 1;
+            int stackCount = 100;
+            int totalUsedMemory = PAYLOAD_EXEC_ASM + callCodeCount + retCount + stackCount;
+            var savedMemory = cspect.Peek((ushort)EXEC_ASM_START_ADDR, totalUsedMemory);
+
+            // Use 4 byte for CALL+NOP
+            ushort callAddress = (ushort)(EXEC_ASM_START_ADDR + callCodeCount);
+            cspect.Poke((ushort)EXEC_ASM_START_ADDR, 0xCD); // CALL
+            cspect.Poke((ushort)(EXEC_ASM_START_ADDR + 1), (byte)(callAddress & 0xFF)); // low(callAddress)
+            cspect.Poke((ushort)(EXEC_ASM_START_ADDR + 2), (byte)(callAddress >> 8)); // high(callAddress)
+            cspect.Poke((ushort)(EXEC_ASM_START_ADDR + 3), 0x00); // NOP
+
+            // Overwrite memory with object code
+            byte[] codeBytes = code.ToArray();
+            cspect.Poke(callAddress, codeBytes);
+            // End with RET (0xC9)
+            ushort retAddress = (ushort) (callAddress + code.Count);
+            cspect.Poke(retAddress, 0xC9);
+
+            // Disable interrupts, set PC and SP
+            var regs = cspect.GetRegs();
+            regs.IFF1 = false;
+            regs.IFF2 = false;
+            regs.PC = (ushort)EXEC_ASM_START_ADDR;
+            regs.SP = (ushort)(EXEC_ASM_START_ADDR + totalUsedMemory);
+            cspect.SetRegs(regs);
+
+            // Execute object code
+            if (Log.Enabled)
+                Log.WriteLine("ExecAsm: before Stepover");
+
+            // Run
+            DbgExec(Plugin.eDebugCommand.StepOver);
+
+            if (Log.Enabled)
+                Log.WriteLine("ExecAsm: after Stepover");
+
+
+            // Save the resulting registers for the response
+            var resultRegs = cspect.GetRegs();
+
+            if (Log.Enabled)
+                Log.WriteLine(" PC=0x{0:X4}", resultRegs.PC);
+
+            // Restore memory
+            cspect.Poke((ushort)EXEC_ASM_START_ADDR, savedMemory);
+
+            // Restore regs and interrupt state
+            cspect.SetRegs(saveRegs);
+
+            // Restore breakpoints
+            foreach(var bp in BreakpointMap)
+                SetBreakpointRaw(bp.Value);
+
+            // No error
+            SetByte(0);
+            SetWord(resultRegs.AF); // AF
+            SetWord(resultRegs.BC); // BC
+            SetWord(resultRegs.DE); // DE
+            SetWord(resultRegs.HL); // HL
+
+            // Respond
+            CSpectSocket.SendResponse(Data);
+            if (Log.Enabled)
+                Log.WriteLine("ExecAsm left");
+        }
+
+        /**
+         * Turns the interrupt on or off.
+         */
+        public static void InterruptOnOff()
+        {
+            // Get enable/disable
+            byte enableValue = CSpectSocket.GetDataByte();
+            bool enableInterrupt = (enableValue != 0);
+
+            // Get regs and set interrupt
+            var cspect = Main.CSpect;
+            var regs = cspect.GetRegs();
+            regs.IFF1 = enableInterrupt;
+            regs.IFF2 = enableInterrupt;
+            cspect.SetRegs(regs);
+
+            // Respond
+            CSpectSocket.SendResponse();
+        }
 
         /**
          * Returns the state.
