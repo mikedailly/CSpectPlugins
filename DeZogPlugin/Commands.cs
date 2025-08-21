@@ -1175,11 +1175,18 @@ namespace DeZogPlugin
             var debugState = cspect.Debugger(Plugin.eDebugCommand.GetState);
             bool running = (debugState == 0);
 
-            // Check if too big or running
-            if(code.Count > PAYLOAD_EXEC_ASM || running)
+            // Error code
+            byte errorCode = 0;
+            if (code.Count > PAYLOAD_EXEC_ASM)
+                errorCode = 1;
+            if (running)
+                errorCode = 2;
+
+            // Check for  error
+            if (errorCode != 0)
             {
-                // Payload too bi or debugger not stopped -> return an error
-                SetByte(1); // Error
+                // Return an error
+                SetByte(errorCode); // Error
                 SetWord(0); // AF
                 SetWord(0); // BC
                 SetWord(0); // DE
