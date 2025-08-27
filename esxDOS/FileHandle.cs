@@ -17,7 +17,17 @@ namespace esxDOS
         public string Name { get; set; }
         
         /// <summary>R/W head into file</summary>
-        public long Position { get; set; }
+        public long Position {
+            get {
+                if (File == null) return -1;
+                return File.Position;
+            }
+            set
+            {
+                if (File == null) return;
+                File.Position = value;
+            }
+        }
         
         /// <summary>Length in bytes of the file - NOT the length of the buffer, which may be larger</summary>
         public long Length { get { return File.Length;  } }
