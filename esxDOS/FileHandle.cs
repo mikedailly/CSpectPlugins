@@ -155,6 +155,7 @@ namespace esxDOS
         // ******************************************************************************************************************************************************
         public int Write(byte[] buffer, int offset, int size)
         {
+            if (!File.CanWrite) return -1;
             File.Write(buffer, offset, size);
             return size;
         }

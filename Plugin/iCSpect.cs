@@ -342,19 +342,21 @@ namespace Plugin
         /// </summary>
         /// <param name="_reg">Register to set</param>
         /// <param name="_value">value to set</param>
+        /// <param name="_regindex">-1 for hardware order, or register index (i.e. multiwrite window reg, 0-3)</param>
         // ------------------------------------------------------------
-        void SetNextRegister(byte _reg, byte _value);
+        void SetNextRegister(byte _reg, byte _value, int _regindex=-1);
 
         // ------------------------------------------------------------
         /// <summary>
         ///     Read a next register
         /// </summary>
         /// <param name="_reg">register to read</param>
+        /// <param name="_regindex">-1 for hardware order, or register index (i.e. multiwrite window reg, 0-3)</param>
         /// <returns>
         ///     register value
         /// </returns>
         // ------------------------------------------------------------
-        byte GetNextRegister(byte _reg);
+        byte GetNextRegister(byte _reg, int _regindex=-1);
 
         // ------------------------------------------------------------
         /// <summary>

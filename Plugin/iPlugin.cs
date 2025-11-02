@@ -133,6 +133,7 @@ namespace Plugin
         /// <param name="_id">optional ID returned</param>
         /// <returns>
         ///     Byte to return, or ignored if _isvalid == false
+        ///     If "Execute" mode, byte returned is TStates to add
         /// </returns>
         // -------------------------------------------------------
         byte Read(eAccess _type, int _port, int _id, out bool _isvalid);

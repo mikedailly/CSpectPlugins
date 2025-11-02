@@ -525,8 +525,8 @@ namespace NextRegisterViewer
         {
             string s = string.Format("Clip Window ULA (and LowRes)" + _BBB +
                           "\tX1 position:\t{0}" + _BBB +
-                          "\tY1 position:\t{1}" + _BBB +
-                          "\tX2 position:\t{2}" + _BBB +
+                          "\tX2 position:\t{1}" + _BBB +
+                          "\tY1 position:\t{2}" + _BBB +
                           "\tY2 position:\t{3}" + _BBB, Regs.ClipWindowULA[0], Regs.ClipWindowULA[1], Regs.ClipWindowULA[2], Regs.ClipWindowULA[3]);
             return s;
         }

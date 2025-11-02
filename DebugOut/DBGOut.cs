@@ -21,6 +21,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Plugin;
 using System.Runtime.InteropServices;
+using System.Windows.Forms;
 
 
 namespace DebugOut
@@ -71,8 +72,7 @@ namespace DebugOut
             bool active = (bool)CSpect.GetGlobal(eGlobal.esxDOS);
             if (!active) return null;
 
-            Debug.WriteLine("RST 0x18 interface added");
-
+            Console.WriteLine("RST 0x18 interface added");
 
             // create a list of the ports we're interested in
             List<sIO> ports = new List<sIO>();
