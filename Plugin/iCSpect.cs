@@ -262,6 +262,24 @@ namespace Plugin
         // ------------------------------------------------------------
         void PokePhysical(int _address, byte _value);
 
+        // ----------------------------------------------------------------------------------
+        /// <summary>
+        ///     Poke a byte into the nexts 2Mb address range - Allowing for ULA overlay
+        /// </summary>
+        /// <param name="_address">Physical address to poke into</param>
+        /// <param name="_values">Array of values to poke</param>
+        // ----------------------------------------------------------------------------------
+        void PokePhysicalULA(int _address, byte[] _value);
+
+        // ----------------------------------------------------------------------------------
+        /// <summary>
+        ///     Poke a byte into the nexts 2Mb address range - Allowing for ULA overlay
+        /// </summary>
+        /// <param name="_address">Physical address to poke into</param>
+        /// <param name="_value">Single value to poke</param>
+        // ----------------------------------------------------------------------------------
+        void PokePhysicalULA(int _address, byte _value);
+
         // ------------------------------------------------------------
         /// <summary>
         ///     Poke a byte into the 16K of sprite image memory
@@ -321,6 +339,29 @@ namespace Plugin
         /// </returns>
         // ------------------------------------------------------------
         byte PeekPhysical(int _address);
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Peek a byte from Nexts 2Mb address space - Allowing for ULA overlay
+        /// </summary>
+        /// <param name="_address">Address to peek</param>
+        /// <param name="_count">number of bytes to "peek"</param>
+        /// <returns>
+        ///     Array holding the requested location
+        /// </returns>
+        // ------------------------------------------------------------
+        byte[] PeekPhysicalULA(int _address, int _count);
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Peek a single byte from Nexts 2Mb address space - Allowing for ULA overlay
+        /// </summary>
+        /// <param name="_address">Address to peek</param>
+        /// <returns>
+        ///     byte of peeked memory from the requested location
+        /// </returns>
+        // ------------------------------------------------------------
+        byte PeekPhysicalULA(int _address);
 
         // ------------------------------------------------------------
         /// <summary>

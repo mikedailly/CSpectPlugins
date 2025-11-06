@@ -715,10 +715,12 @@ namespace DeZogPlugin
             var cspect = Main.CSpect;
             if (Log.Enabled)
                 Log.WriteLine("WriteBank: bank={0}", bankNumber);
+
             for (int i = bankSize; i > 0; i--)
             {
                 byte value = CSpectSocket.GetDataByte();
-                cspect.PokePhysical(physAddress++, new byte[] {value});
+                cspect.PokePhysicalULA(physAddress++, new byte[] {value});
+                physAddress++;
             }
 
             // Respond

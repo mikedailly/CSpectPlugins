@@ -74,10 +74,15 @@ namespace SpriteViewer
 
             this.Paint += new System.Windows.Forms.PaintEventHandler(SpriteViewer_Paint);
             SpritePanel.Paint += new System.Windows.Forms.PaintEventHandler(SpriteViewerForm_Paint);
+
+            // Enable double buffering on the sprite panel to eliminate flicker
+            SpritePanel.GetType().GetProperty("DoubleBuffered",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                .SetValue(SpritePanel, true, null);
+
             this.Refresh();
             this.Invalidate(true);
             Application.DoEvents();
-            this.DoubleBuffered = true;
         }
 
         // ******************************************************************************************
