@@ -719,7 +719,7 @@ namespace DeZogPlugin
             for (int i = bankSize; i > 0; i--)
             {
                 byte value = CSpectSocket.GetDataByte();
-                cspect.PokePhysicalULA(physAddress++, new byte[] {value});
+                cspect.PokePhysicalULA(physAddress, new byte[] {value});
                 physAddress++;
             }
 
