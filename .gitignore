@@ -28,3 +28,5 @@ DebugOut/bin/
 DebugOut/obj/
 CopperDissassembler/CopperDissassembler.csproj.user
 esxDOS/esxDOS.csproj.user
+MemoryViewer/bin/
+MemoryViewer/obj/
