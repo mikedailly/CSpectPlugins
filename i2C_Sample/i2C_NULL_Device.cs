@@ -31,7 +31,7 @@ namespace i2C_Sample
         // **********************************************************************
         public List<sIO> Init(iCSpect _CSpect)
         {
-            Debug.WriteLine("NULL i2C device Added");
+            Console.WriteLine("NULL i2C device Added");
 
             CSpect = _CSpect;            
 

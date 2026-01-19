@@ -126,7 +126,10 @@ namespace Plugin
         /// <summary>2mb array holding profile information for writing at each memory location</summary>
         profile_write,
         /// <summary>2mb array holding profile information for executing at each memory location</summary>
-        profile_exe
+        profile_exe,
+
+        /// <summary>Emulator pause state</summary>
+        pause
     }
 
     // ********************************************************************************************************************************
@@ -299,11 +302,12 @@ namespace Plugin
         /// </summary>
         /// <param name="_address">Address to peek</param>
         /// <param name="_count">number of bytes to "peek"</param>
+        /// <param name="_buffer">[optional] buffer to fill</param>
         /// <returns>
         ///     Array holding the requested location
         /// </returns>
         // ------------------------------------------------------------
-        byte[] Peek(ushort _address, int _count);
+        byte[] Peek(ushort _address, int _count, byte[] _buffer = null);
 
         // ------------------------------------------------------------
         /// <summary>
@@ -323,11 +327,12 @@ namespace Plugin
         /// </summary>
         /// <param name="_address">Address to peek</param>
         /// <param name="_count">number of bytes to "peek"</param>
+        /// <param name="_buffer">[optional] buffer to fill</param>
         /// <returns>
         ///     Array holding the requested location
         /// </returns>
         // ------------------------------------------------------------
-        byte[] PeekPhysical(int _address, int _count);
+        byte[] PeekPhysical(int _address, int _count, byte[] _buffer = null);
 
         // ------------------------------------------------------------
         /// <summary>
@@ -346,11 +351,12 @@ namespace Plugin
         /// </summary>
         /// <param name="_address">Address to peek</param>
         /// <param name="_count">number of bytes to "peek"</param>
+        /// <param name="_buffer">option buffer to fill</param>
         /// <returns>
         ///     Array holding the requested location
         /// </returns>
         // ------------------------------------------------------------
-        byte[] PeekPhysicalULA(int _address, int _count);
+        byte[] PeekPhysicalULA(int _address, int _count, byte[] _buffer=null);
 
         // ------------------------------------------------------------
         /// <summary>

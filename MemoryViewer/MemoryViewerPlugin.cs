@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using Plugin;
 
-namespace SpriteViewer
+namespace MemoryViewer
 {
     class WindowWrapper : IWin32Window
     {
@@ -29,23 +29,20 @@ namespace SpriteViewer
     ///     The Sprite Viewer
     /// </summary>
     // *********************************************************************************************************
-    public class SpriteViewerPlugin : iPlugin
+    public class MemoryViewerPlugin : iPlugin
     {
         /// <summary>CSpect emulator interface</summary>
-        iCSpect CSpect;
+        public iCSpect CSpect;
         public static bool Active;
-        public static SpriteViewerForm form;
-        byte[] SpriteMemory = new byte[16384];
-        byte[] LastSpriteMemory = new byte[16384];
-        SSprite[] SpriteData = new SSprite[128];
-
-        int[] Palette = new int[256];
+        public static MemoryViewerForm form;
 
         bool doinvalidate = false;
-        bool update_sprite_shapes = true;
-        public bool OpenSpriteWindow = false;
+        public bool OpenMemViewerWindow = false;
+        public int PaletteNumber = 0;
 
         WindowWrapper hwndWrapper;
+
+
         // *********************************************************************************************************
         /// <summary>
         ///     Init the plugin
@@ -57,17 +54,18 @@ namespace SpriteViewer
         // *********************************************************************************************************
         public List<sIO> Init(iCSpect _CSpect)
         {
-            Console.WriteLine("Sprite Viewer added");
+            Console.WriteLine("Memory Viewer added");
 
             CSpect = _CSpect;
             IntPtr handle = (IntPtr)CSpect.GetGlobal(eGlobal.window_handle);
             hwndWrapper = new WindowWrapper(handle);
 
+            PaletteNumber = 1;
             ZXPalette.Init();
 
             // Detect keypress for starting disassembler
             List<sIO> ports = new List<sIO>();
-            ports.Add(new sIO("<ctrl><alt>s", eAccess.KeyPress, 0));                   // Key press callback
+            ports.Add(new sIO("<ctrl><alt>d", eAccess.KeyPress, 0));                   // Key press callback
             return ports;
         }
 
@@ -80,10 +78,9 @@ namespace SpriteViewer
         // ******************************************************************************************
         public bool KeyPressed(int _id)
         {
-
             if (_id == 0)
             {
-                OpenSpriteWindow = true;
+                OpenMemViewerWindow = true;
                 return true;
             }
             return false;
@@ -131,6 +128,14 @@ namespace SpriteViewer
         {
             if (!Active) return;
 
+            for (int i = -0; i < 256; i++)
+            {
+                uint col = CSpect.GetColour(PaletteNumber, i);
+                ZXPalette.Palette1[i] = col;
+            }
+
+
+            /*
             for (int i = 0; i < 128; i++)
             {
                 SpriteData[i] = CSpect.GetSprite(i);
@@ -152,6 +157,7 @@ namespace SpriteViewer
 
             // remember last set
             Array.Copy(SpriteMemory,LastSpriteMemory,16384);            
+            */
         }
 
 
@@ -162,27 +168,25 @@ namespace SpriteViewer
         // ******************************************************************************************
         public void OSTick()
         {
-            if (OpenSpriteWindow)
+            if (OpenMemViewerWindow)
             {
                 if (!Active)
                 {
                     Active = true;
                     doinvalidate = true;
-                    update_sprite_shapes = true;
-                    form = new SpriteViewerForm(SpriteMemory, this);
+                    form = new MemoryViewerForm(this);
                     form.Show();
                 }
-                OpenSpriteWindow = false;
+                OpenMemViewerWindow = false;
             }
 
-            if (doinvalidate && form!=null)
-            {
-                if (update_sprite_shapes) form.SpriteBuffer = SpriteMemory;
 
-                form.Invalidate();     // refresh IF it's changed
-                //Application.DoEvents();
+            //doinvalidate = true;
+            if (form!=null && (form.RealtimeCheckbox.Checked || form.DoSnapshot))
+            {
+                form.DoSnapshot = false;
+                form.Invalidate();              // refresh IF it's changed
                 doinvalidate = false;
-                update_sprite_shapes = false;
             }
         }
 

@@ -55,7 +55,7 @@ namespace NextRegisterViewer
         // *********************************************************************************************************
         public List<sIO> Init(iCSpect _CSpect)
         {
-            Debug.WriteLine("Next Register Viewer added");
+            Console.WriteLine("Next Register Viewer added");
 
             Regs = new RegDetails();
             CSpect = _CSpect;

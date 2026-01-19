@@ -326,7 +326,7 @@ namespace esxDOS
             // Install the disk interface - this lets us replace it with a behind the scenes WAD system if we want....
             FileSystem = new HDFileSystem();
 
-            Debug.WriteLine("RST 0x08 interface added");
+            Console.WriteLine("RST 0x08 interface added");
 
 
             // create a list of the ports we're interested in

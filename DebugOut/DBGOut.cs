@@ -72,7 +72,7 @@ namespace DebugOut
             bool active = (bool)CSpect.GetGlobal(eGlobal.esxDOS);
             if (!active) return null;
 
-            Console.WriteLine("RST 0x18 interface added");
+            Console.WriteLine("DebugOut added");
 
             // create a list of the ports we're interested in
             List<sIO> ports = new List<sIO>();

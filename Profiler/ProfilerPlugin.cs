@@ -52,7 +52,7 @@ namespace Profiler
         // *********************************************************************************************************
         public List<sIO> Init(iCSpect _CSpect)
         {
-            Debug.WriteLine("Profiler added");
+            Console.WriteLine("Profiler added");
 
             CSpect = _CSpect;
             IntPtr handle = (IntPtr)CSpect.GetGlobal(eGlobal.window_handle);
