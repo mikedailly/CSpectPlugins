@@ -369,6 +369,18 @@ namespace Plugin
         // ------------------------------------------------------------
         byte PeekPhysicalULA(int _address);
 
+        // ****************************************************************************
+        /// <summary>
+        ///     Get the memory access details of a specific address
+        /// </summary>
+        /// <param name="_physicalAddress">Address to get status of</param>
+        /// <param name="_ULAMemory">enable ULA memory overlay</param>
+        /// <returns>
+        ///     SMemWrite struct - if all zeros then never written
+        /// </returns>
+        // ****************************************************************************
+        unsafe SMemWrite GetMemoryAccess(int _physicalAddress, bool _ULAMemory);
+
         // ------------------------------------------------------------
         /// <summary>
         ///     Peek a byte from the 16K of sprite image memory

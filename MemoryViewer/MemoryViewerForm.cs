@@ -89,6 +89,12 @@ namespace MemoryViewer
         /// <summary>Palette offset * 16 for 256 palette</summary>
         int PaletteOffset16 = 0;
 
+        /// <summary>Last tooltip Physical PC address</summary>
+        int LastPhysicalPC = -1;
+        /// <summary>Last tooltip Logical PC address</summary>
+        int LastLogicalPC = -1;
+
+
         /// <summary>Hex conversion</summary>
         public static string HEX = "0123456789abcdef";
 
@@ -131,11 +137,13 @@ namespace MemoryViewer
 
             this.Paint += new System.Windows.Forms.PaintEventHandler(SpriteViewer_Paint);
             MemoryPanel.Paint += new System.Windows.Forms.PaintEventHandler(SpriteViewerForm_Paint);
+            MemoryPanel.MouseDoubleClick += MemoryPanel_MouseDoubleClick;
 
             // Enable double buffering on the sprite panel to eliminate flicker
             MemoryPanel.GetType().GetProperty("DoubleBuffered",
                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
                 .SetValue(MemoryPanel, true, null);
+            
 
             this.Refresh();
             this.Invalidate(true);
@@ -160,69 +168,6 @@ namespace MemoryViewer
             drawBlackPen = new Pen(drawBlack);
             visible_lines = ((this.ClientSize.Height / drawFont.Height));
             first_time = false;
-        }
-
-
-        // ***************************************************************************************************************************
-        /// <summary>
-        ///      Get pixel memory details
-        /// </summary>
-        /// <param name="_x">Mouse X</param>
-        /// <param name="_y">Mo
-        /// use Y</param>
-        /// <returns>Formatted string for tool tips</returns>
-        // ***************************************************************************************************************************
-        public unsafe string GetMemoryDetails(int _x, int _y)
-        {
-            int Scale = DrawScale;
-            _x = _x - MemoryPanel.Left+1 -(Scale / 2);
-            _y = _y - (MemoryPanel.Top-2-(Scale/2));
-            _x = _x / Scale;
-            _y = _y / Scale;
-
-            //CurrentAddress
-            byte b=0;
-            int Address = 0;
-            if (Mode == eMemoryMode.SpectrumScreen)
-            {                
-                int offset_base = ((((_y >> 3) & 0x18) | (_y & 7)) << 8) | ((_y << 2) & 0xe0);
-                int x = _x / 8;
-                offset_base += x;
-
-                Address = CurrentAddress + offset_base;
-            }
-            else if (Mode == eMemoryMode.LinearBitmap)
-            {
-                int offset_base = (_x / 8) + (_y * MemoryWidth);
-                Address = CurrentAddress + offset_base;
-            }
-            else if (Mode == eMemoryMode.Layer2_256)
-            {
-                int offset_base = _x  + (_y * MemoryWidth);
-                Address = CurrentAddress + offset_base;
-            }
-            else if (Mode == eMemoryMode.Layer2_320)
-            {
-                //DrawLayer2_320Bitmap(pData, pMem, BufferSize);
-            }
-            else if (Mode == eMemoryMode.SixteenColour_Linear)
-            {
-                //Draw16_Linear_Bitmap(pData, pMem, BufferSize);
-            }
-            else if (Mode == eMemoryMode.SixteenColour_Stripped)
-            {
-                //Draw16_Stripped_Bitmap(pData, pMem, BufferSize);
-            }
-            else if (Mode == eMemoryMode.Raw_Grayscale)
-            {
-                //DrawRAWBitmap(pData, pMem, BufferSize);
-            }
-
-            byte[] data = CSpect.PeekPhysicalULA(Address, 1);
-            b = data[0];
-
-            return "Byte: " +b.ToString();
-
         }
 
         // ********************************************************************************************************************
@@ -265,23 +210,7 @@ namespace MemoryViewer
         // ******************************************************************************************
         private void Form1_Load(object sender, EventArgs e)
         {
-            CalcScrollBar();
-        }
-
-        // ******************************************************************************************
-        /// <summary>
-        ///     Update the VScroll bar
-        /// </summary>
-        // ******************************************************************************************
-        void CalcScrollBar()
-        {
             CreateFont();
-            vAddressScrollBar.Maximum = 2048 - visible_lines;
-
-            vAddressScrollBar.Minimum = 0;
-            vAddressScrollBar.SmallChange = 1;
-            vAddressScrollBar.LargeChange = visible_lines;
-            vAddressScrollBar.Maximum = 2048 + visible_lines;
         }
 
         // *******************************************************************************************************************
@@ -311,6 +240,28 @@ namespace MemoryViewer
                 _g.DrawString(addr, drawFont, b, x, y);*/
         }
 
+        // ******************************************************************************************
+        /// <summary>
+        ///     Peek physical memory, allowing us to swap to/from ULA memory access
+        /// </summary>
+        /// <param name="_PhysicalAddress">The physical address to peek</param>
+        /// <param name="_count">number of bytes</param>
+        /// <param name="_buffer">[optional]The buffer to fill</param>
+        /// <returns>
+        ///     The buffer returned
+        /// </returns>
+        // ******************************************************************************************
+        public byte[] Peek(int _PhysicalAddress, int _count, byte[] _buffer=null)
+        {
+            if (ULAEnabledCheckbox.Checked)
+            {
+                return CSpect.PeekPhysicalULA(_PhysicalAddress, _count, _buffer);
+            }
+            else
+            {
+                return CSpect.PeekPhysicalULA(_PhysicalAddress, _count, _buffer);
+            }
+        }
 
         // ******************************************************************************************
         /// <summary>
@@ -337,11 +288,13 @@ namespace MemoryViewer
 
             //g.FillRectangle(Brushes.Black, 0, 0, 100, 100);
 
-            byte[] mem = CSpect.PeekPhysicalULA(CurrentAddress, BufferSize, MemBuffer);
+            byte[] mem = Peek(CurrentAddress, BufferSize, MemBuffer);
             System.Drawing.Imaging.BitmapData data = BackBuffer.LockBits(new Rectangle(0, 0, BackBuffer.Width, BackBuffer.Height), System.Drawing.Imaging.ImageLockMode.WriteOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
             UInt32* pData = (UInt32*)data.Scan0;
             int ScanWidth = data.Stride;
 
+            MAX_WIDTH = BackBuffer.Width - 2;
+            MAX_HEIGHT = BackBuffer.Height - 2;
 
             UInt32* pDataStart = pData + (ScanWidth/4) + 1;
             if (DoClear)
@@ -407,11 +360,95 @@ namespace MemoryViewer
 
                 //string tip = "Hello World\r\nThe Quick Brown Fox";
                 IWin32Window win = this;
-                CurrentTT.Show(tip, win, MouseX, MouseY);
+                CurrentTT.Show(tip, win, MouseX, MouseY-10);
                 MouseMoved = false;
             }
         }
 
+
+        // ***************************************************************************************************************************
+        /// <summary>
+        ///      Get pixel memory details
+        /// </summary>
+        /// <param name="_x">Mouse X</param>
+        /// <param name="_y">Mouse Y</param>
+        /// <returns>Formatted string for tool tips</returns>
+        // ***************************************************************************************************************************
+        public unsafe string GetMemoryDetails(int _x, int _y)
+        {
+            int Scale = DrawScale;
+            _x = _x - MemoryPanel.Left + 1 - (Scale / 2);
+            _y = _y - (MemoryPanel.Top - 2 - (Scale / 2));
+            _x = _x / Scale;
+            _y = _y / Scale;
+
+            //CurrentAddress
+            byte b = 0;
+            int Address = 0;
+            if (Mode == eMemoryMode.SpectrumScreen)
+            {
+                int offset_base = ((((_y >> 3) & 0x18) | (_y & 7)) << 8) | ((_y << 2) & 0xe0);
+                int x = _x / 8;
+                offset_base += x;
+
+                Address = CurrentAddress + offset_base;
+            }
+            else if (Mode == eMemoryMode.LinearBitmap)
+            {
+                int offset_base = (_x / 8) + (_y * MemoryWidth);
+                Address = CurrentAddress + offset_base;
+            }
+            else if (Mode == eMemoryMode.Layer2_256)
+            {
+                int offset_base = _x + (_y * MemoryWidth);
+                Address = CurrentAddress + offset_base;
+            }
+            else if (Mode == eMemoryMode.Layer2_320)
+            {
+                int offset_base = _y + (_x * MemoryWidth);
+                Address = CurrentAddress + offset_base;
+            }
+            else if (Mode == eMemoryMode.SixteenColour_Linear)
+            {
+                int offset_base = (_x / 2) + (_y * MemoryWidth);
+                Address = CurrentAddress + offset_base;
+            }
+            else if (Mode == eMemoryMode.SixteenColour_Stripped)
+            {
+                int offset_base = _y + ((_x / 2) * MemoryWidth);
+                Address = CurrentAddress + offset_base;
+            }
+            else if (Mode == eMemoryMode.Raw_Grayscale)
+            {
+                int offset_base = _x + (_y * MemoryWidth);
+                Address = CurrentAddress + offset_base;
+            }
+
+            byte[] data = Peek(Address, 1);
+            b = data[0];
+
+            if (Address >= (2 * 1024 * 1024)) Address = 0;
+            SMemWrite mwrite = CSpect.GetMemoryAccess(Address, ULAEnabledCheckbox.Checked);
+            LastPhysicalPC = mwrite.PhysicalAddress;
+            LastLogicalPC = mwrite.PC;
+
+            int bank = mwrite.PhysicalAddress >> 13;
+            int offs = mwrite.PhysicalAddress & 0x1fff;
+            string txt = "Byte:     $" + b.ToString("X")+"\r\n"+
+                         "PC:       $"+ mwrite.PC.ToString("X") + "\r\n" +
+                         "Physical: $"+bank.ToString("X")+":$"+offs.ToString("X");
+
+            return txt;
+        }
+
+        private void MemoryPanel_MouseDoubleClick(object sender, MouseEventArgs e)
+        {
+            if (LastPhysicalPC != -1)
+            {
+                CSpect.Debugger( eDebugCommand.SetPhysicalBreakpoint, LastPhysicalPC );
+                LastPhysicalPC = -1;
+            }
+        }
 
         // ******************************************************************************************
         /// <summary>
@@ -658,44 +695,6 @@ namespace MemoryViewer
             MemoryViewerPlugin.form = null;
         }
 
-        // ******************************************************************************************
-        /// <summary>
-        ///     Scrollbar changed
-        /// </summary>
-        // ******************************************************************************************
-        public void UpdateAddress()
-        {
-            StartAddress = vAddressScrollBar.Value & ~1;
-            if (StartAddress > (2048 - visible_lines)) StartAddress = 2048 - visible_lines;
-            Invalidate();
-        }
-
-        // ******************************************************************************************
-        /// <summary>
-        ///     Scroll bar change - update start address
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        // ******************************************************************************************
-        private void vScrollBar1_ValueChanged(object sender, EventArgs e)
-        {
-            CreateFont();
-            UpdateAddress();
-        }
-
-
-        // ******************************************************************************************
-        /// <summary>
-        ///     Scroll bar-a-scrollin'
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        // ******************************************************************************************
-        private void vAddressScrollBar_Scroll(object sender, ScrollEventArgs e)
-        {
-            CreateFont();
-            UpdateAddress();
-        }
 
         // ******************************************************************************************
         /// <summary>
@@ -706,7 +705,6 @@ namespace MemoryViewer
         // ******************************************************************************************
         private void SpriteViewerForm_ResizeEnd(object sender, EventArgs e)
         {
-            CalcScrollBar();
         }
 
 
@@ -1035,6 +1033,92 @@ namespace MemoryViewer
                 //this.Invalidate();
                 //Application.DoEvents();
             }
+        }
+
+        // **************************************************************************************************
+        /// <summary>
+        ///     Decrease memory by 8k (1 bank)
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        // **************************************************************************************************
+        private void DecreaseMemoryButton_Click(object sender, EventArgs e)
+        {
+            string text = BankOffsetBox.Text;
+
+            // Bank:offset?
+            long value = -1;
+            int colonindex = text.IndexOf(':');
+            if (colonindex >= 0)
+            {
+                string bank = text.Substring(0, colonindex);
+                string offset = text.Substring(colonindex + 1);
+
+                long b = ConvertNumber(bank);
+                if (b >= 0)
+                {
+                    b--;
+                    if (b < 0) b = 254;
+                    BankOffsetBox.Text = "$" + b.ToString("X") + ":" + offset;
+                }
+            }
+            else
+            {
+                // FULL physical address
+                long b = ConvertNumber(text);
+                if (b >= 0)
+                {
+                    b -= 8192;
+                    if(b<0) b = (2*1024*1024)-8192;
+                    BankOffsetBox.Text = "$" + b.ToString("X");
+                }
+                value = b;
+            }
+        }
+
+        private void IncreaseMemoryButton_Click(object sender, EventArgs e)
+        {
+            string text = BankOffsetBox.Text;
+
+            // Bank:offset?
+            long value = -1;
+            int colonindex = text.IndexOf(':');
+            if (colonindex >= 0)
+            {
+                string bank = text.Substring(0, colonindex);
+                string offset = text.Substring(colonindex + 1);
+
+                long b = ConvertNumber(bank);
+                if (b >= 0)
+                {
+                    b++;
+                    if (b > 256) b = 0;
+                    BankOffsetBox.Text = "$" + b.ToString("X") + ":" + offset;
+                }
+            }
+            else
+            {
+                // FULL physical address
+                long b = ConvertNumber(text);
+                if (b >= 0)
+                {
+                    b += 8192;
+                    if (b < (2 * 1024 * 1024)) b = 0;
+                    BankOffsetBox.Text = "$" + b.ToString("X");
+                }
+                value = b;
+            }
+
+        }
+
+        /// <summary>
+        ///     Step game a SINGLE frame
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void StepButton_Click(object sender, EventArgs e)
+        {
+            Plugin.DoStep = 2;
         }
     }
 }

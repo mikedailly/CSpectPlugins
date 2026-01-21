@@ -28,7 +28,6 @@
         /// </summary>
         private void InitializeComponent()
         {
-            this.vAddressScrollBar = new System.Windows.Forms.VScrollBar();
             this.MemoryPanel = new System.Windows.Forms.Panel();
             this.MemModeCombo = new System.Windows.Forms.ComboBox();
             this.label1 = new System.Windows.Forms.Label();
@@ -36,7 +35,7 @@
             this.label3 = new System.Windows.Forms.Label();
             this.BankOffsetBox = new System.Windows.Forms.TextBox();
             this.WidthCombo = new System.Windows.Forms.ComboBox();
-            this.checkBox1 = new System.Windows.Forms.CheckBox();
+            this.ULAEnabledCheckbox = new System.Windows.Forms.CheckBox();
             this.ScaleLabel = new System.Windows.Forms.Label();
             this.ScaleCombo = new System.Windows.Forms.ComboBox();
             this.label4 = new System.Windows.Forms.Label();
@@ -48,21 +47,10 @@
             this.OffsetCombo = new System.Windows.Forms.ComboBox();
             this.SnapShotButton = new System.Windows.Forms.Button();
             this.PauseButton = new System.Windows.Forms.Button();
+            this.StepButton = new System.Windows.Forms.Button();
+            this.DecreaseMemoryButton = new System.Windows.Forms.Button();
+            this.IncreaseMemoryButton = new System.Windows.Forms.Button();
             this.SuspendLayout();
-            // 
-            // vAddressScrollBar
-            // 
-            this.vAddressScrollBar.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
-            | System.Windows.Forms.AnchorStyles.Right)));
-            this.vAddressScrollBar.LargeChange = 8192;
-            this.vAddressScrollBar.Location = new System.Drawing.Point(763, 9);
-            this.vAddressScrollBar.Maximum = 2097152;
-            this.vAddressScrollBar.Name = "vAddressScrollBar";
-            this.vAddressScrollBar.Size = new System.Drawing.Size(20, 653);
-            this.vAddressScrollBar.SmallChange = 2048;
-            this.vAddressScrollBar.TabIndex = 4;
-            this.vAddressScrollBar.Scroll += new System.Windows.Forms.ScrollEventHandler(this.vAddressScrollBar_Scroll);
-            this.vAddressScrollBar.ValueChanged += new System.EventHandler(this.vScrollBar1_ValueChanged);
             // 
             // MemoryPanel
             // 
@@ -71,7 +59,7 @@
             | System.Windows.Forms.AnchorStyles.Right)));
             this.MemoryPanel.Location = new System.Drawing.Point(13, 85);
             this.MemoryPanel.Name = "MemoryPanel";
-            this.MemoryPanel.Size = new System.Drawing.Size(747, 577);
+            this.MemoryPanel.Size = new System.Drawing.Size(767, 577);
             this.MemoryPanel.TabIndex = 5;
             this.MemoryPanel.MouseEnter += new System.EventHandler(this.SpritePanel_MouseEnter);
             this.MemoryPanel.MouseLeave += new System.EventHandler(this.SpritePanel_MouseLeave);
@@ -157,17 +145,17 @@
             this.WidthCombo.SelectionChangeCommitted += new System.EventHandler(this.WidthCombo_SelectionChangeCommitted);
             this.WidthCombo.KeyUp += new System.Windows.Forms.KeyEventHandler(this.WidthCombo_KeyUp);
             // 
-            // checkBox1
+            // ULAEnabledCheckbox
             // 
-            this.checkBox1.AutoSize = true;
-            this.checkBox1.Checked = true;
-            this.checkBox1.CheckState = System.Windows.Forms.CheckState.Checked;
-            this.checkBox1.Location = new System.Drawing.Point(16, 52);
-            this.checkBox1.Name = "checkBox1";
-            this.checkBox1.Size = new System.Drawing.Size(83, 17);
-            this.checkBox1.TabIndex = 10;
-            this.checkBox1.Text = "ULA Enable";
-            this.checkBox1.UseVisualStyleBackColor = true;
+            this.ULAEnabledCheckbox.AutoSize = true;
+            this.ULAEnabledCheckbox.Checked = true;
+            this.ULAEnabledCheckbox.CheckState = System.Windows.Forms.CheckState.Checked;
+            this.ULAEnabledCheckbox.Location = new System.Drawing.Point(16, 52);
+            this.ULAEnabledCheckbox.Name = "ULAEnabledCheckbox";
+            this.ULAEnabledCheckbox.Size = new System.Drawing.Size(83, 17);
+            this.ULAEnabledCheckbox.TabIndex = 10;
+            this.ULAEnabledCheckbox.Text = "ULA Enable";
+            this.ULAEnabledCheckbox.UseVisualStyleBackColor = true;
             // 
             // ScaleLabel
             // 
@@ -232,7 +220,7 @@
             // label5
             // 
             this.label5.AutoSize = true;
-            this.label5.Location = new System.Drawing.Point(456, 24);
+            this.label5.Location = new System.Drawing.Point(493, 24);
             this.label5.Name = "label5";
             this.label5.Size = new System.Drawing.Size(40, 13);
             this.label5.TabIndex = 17;
@@ -251,7 +239,7 @@
             "Sprites 1",
             "Tiles 0",
             "Tiles 1"});
-            this.PaletteCombo.Location = new System.Drawing.Point(502, 21);
+            this.PaletteCombo.Location = new System.Drawing.Point(539, 21);
             this.PaletteCombo.Name = "PaletteCombo";
             this.PaletteCombo.Size = new System.Drawing.Size(67, 21);
             this.PaletteCombo.TabIndex = 16;
@@ -261,7 +249,7 @@
             // label6
             // 
             this.label6.AutoSize = true;
-            this.label6.Location = new System.Drawing.Point(461, 54);
+            this.label6.Location = new System.Drawing.Point(498, 54);
             this.label6.Name = "label6";
             this.label6.Size = new System.Drawing.Size(35, 13);
             this.label6.TabIndex = 19;
@@ -288,7 +276,7 @@
             "13",
             "14",
             "15"});
-            this.OffsetCombo.Location = new System.Drawing.Point(502, 52);
+            this.OffsetCombo.Location = new System.Drawing.Point(539, 50);
             this.OffsetCombo.Name = "OffsetCombo";
             this.OffsetCombo.Size = new System.Drawing.Size(67, 21);
             this.OffsetCombo.TabIndex = 20;
@@ -297,7 +285,7 @@
             // 
             // SnapShotButton
             // 
-            this.SnapShotButton.Location = new System.Drawing.Point(580, 51);
+            this.SnapShotButton.Location = new System.Drawing.Point(617, 49);
             this.SnapShotButton.Name = "SnapShotButton";
             this.SnapShotButton.Size = new System.Drawing.Size(75, 23);
             this.SnapShotButton.TabIndex = 21;
@@ -307,7 +295,7 @@
             // 
             // PauseButton
             // 
-            this.PauseButton.Location = new System.Drawing.Point(580, 21);
+            this.PauseButton.Location = new System.Drawing.Point(617, 21);
             this.PauseButton.Name = "PauseButton";
             this.PauseButton.Size = new System.Drawing.Size(75, 23);
             this.PauseButton.TabIndex = 22;
@@ -315,11 +303,47 @@
             this.PauseButton.UseVisualStyleBackColor = true;
             this.PauseButton.Click += new System.EventHandler(this.PauseButton_Click);
             // 
+            // StepButton
+            // 
+            this.StepButton.Enabled = false;
+            this.StepButton.Location = new System.Drawing.Point(698, 21);
+            this.StepButton.Name = "StepButton";
+            this.StepButton.Size = new System.Drawing.Size(75, 23);
+            this.StepButton.TabIndex = 23;
+            this.StepButton.Text = "Step";
+            this.StepButton.UseVisualStyleBackColor = true;
+            this.StepButton.Click += new System.EventHandler(this.StepButton_Click);
+            // 
+            // DecreaseMemoryButton
+            // 
+            this.DecreaseMemoryButton.Font = new System.Drawing.Font("Wingdings", 8.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.DecreaseMemoryButton.Location = new System.Drawing.Point(456, 21);
+            this.DecreaseMemoryButton.Name = "DecreaseMemoryButton";
+            this.DecreaseMemoryButton.Size = new System.Drawing.Size(28, 23);
+            this.DecreaseMemoryButton.TabIndex = 24;
+            this.DecreaseMemoryButton.Text = "á";
+            this.DecreaseMemoryButton.UseVisualStyleBackColor = true;
+            this.DecreaseMemoryButton.Click += new System.EventHandler(this.DecreaseMemoryButton_Click);
+            // 
+            // IncreaseMemoryButton
+            // 
+            this.IncreaseMemoryButton.Font = new System.Drawing.Font("Wingdings", 8.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.IncreaseMemoryButton.Location = new System.Drawing.Point(456, 49);
+            this.IncreaseMemoryButton.Name = "IncreaseMemoryButton";
+            this.IncreaseMemoryButton.Size = new System.Drawing.Size(28, 23);
+            this.IncreaseMemoryButton.TabIndex = 25;
+            this.IncreaseMemoryButton.Text = "â";
+            this.IncreaseMemoryButton.UseVisualStyleBackColor = true;
+            this.IncreaseMemoryButton.Click += new System.EventHandler(this.IncreaseMemoryButton_Click);
+            // 
             // MemoryViewerForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(792, 671);
+            this.Controls.Add(this.IncreaseMemoryButton);
+            this.Controls.Add(this.DecreaseMemoryButton);
+            this.Controls.Add(this.StepButton);
             this.Controls.Add(this.PauseButton);
             this.Controls.Add(this.SnapShotButton);
             this.Controls.Add(this.OffsetCombo);
@@ -331,7 +355,7 @@
             this.Controls.Add(this.label4);
             this.Controls.Add(this.ScaleCombo);
             this.Controls.Add(this.ScaleLabel);
-            this.Controls.Add(this.checkBox1);
+            this.Controls.Add(this.ULAEnabledCheckbox);
             this.Controls.Add(this.WidthCombo);
             this.Controls.Add(this.BankOffsetBox);
             this.Controls.Add(this.label3);
@@ -339,7 +363,6 @@
             this.Controls.Add(this.label1);
             this.Controls.Add(this.MemModeCombo);
             this.Controls.Add(this.MemoryPanel);
-            this.Controls.Add(this.vAddressScrollBar);
             this.DoubleBuffered = true;
             this.Name = "MemoryViewerForm";
             this.Text = "Memory Viewer";
@@ -353,8 +376,6 @@
         }
 
         #endregion
-
-        public System.Windows.Forms.VScrollBar vAddressScrollBar;
         public System.Windows.Forms.Panel MemoryPanel;
         private System.Windows.Forms.Label label1;
         public System.Windows.Forms.ComboBox MemModeCombo;
@@ -370,10 +391,13 @@
         public System.Windows.Forms.ComboBox PaletteCombo;
         private System.Windows.Forms.Label label6;
         public System.Windows.Forms.ComboBox OffsetCombo;
-        private System.Windows.Forms.Button SnapShotButton;
-        private System.Windows.Forms.Button PauseButton;
-        public System.Windows.Forms.CheckBox checkBox1;
+        public System.Windows.Forms.CheckBox ULAEnabledCheckbox;
         public System.Windows.Forms.CheckBox RealtimeCheckbox;
+        private System.Windows.Forms.Button DecreaseMemoryButton;
+        private System.Windows.Forms.Button IncreaseMemoryButton;
+        public System.Windows.Forms.Button StepButton;
+        public System.Windows.Forms.Button SnapShotButton;
+        public System.Windows.Forms.Button PauseButton;
     }
 }
 

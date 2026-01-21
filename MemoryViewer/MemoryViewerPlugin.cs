@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Plugin;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -6,7 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using Plugin;
+using static System.Windows.Forms.VisualStyles.VisualStyleElement.Button;
 
 namespace MemoryViewer
 {
@@ -39,6 +40,8 @@ namespace MemoryViewer
         bool doinvalidate = false;
         public bool OpenMemViewerWindow = false;
         public int PaletteNumber = 0;
+
+        public int DoStep = 0;
 
         WindowWrapper hwndWrapper;
 
@@ -180,9 +183,56 @@ namespace MemoryViewer
                 OpenMemViewerWindow = false;
             }
 
+            if (DoStep == 2)
+            {
+                CSpect.SetGlobal(eGlobal.pause, false);
+                DoStep = 1;
+            }
+            else if (DoStep == 1)
+            {
+                CSpect.SetGlobal(eGlobal.pause, true);
+                DoStep = 0;
+            }
+
+            if (form != null)
+            {
+                // Set Pause/Result button text
+                if ((bool)CSpect.GetGlobal(eGlobal.pause))
+                {
+                    if (form.PauseButton.Text != "Resume")
+                    {
+                        form.PauseButton.Text = "Resume";
+                    }
+                }
+                else
+                {
+                    if (form.PauseButton.Text != "Pause")
+                    {
+                        form.PauseButton.Text = "Pause";
+                    }
+                }
+
+
+                // Enable/Disable "Step" button
+                if ((bool)CSpect.GetGlobal(eGlobal.pause) == true)
+                {
+                    if (form.StepButton.Enabled == false)
+                    {
+                        form.StepButton.Enabled = true;
+                    }
+                }
+                else
+                {
+                    if (form.StepButton.Enabled == true)
+                    {
+                        form.StepButton.Enabled = false;
+                    }
+                }
+            }
+
 
             //doinvalidate = true;
-            if (form!=null && (form.RealtimeCheckbox.Checked || form.DoSnapshot))
+            if (form != null && (form.RealtimeCheckbox.Checked || form.DoSnapshot))
             {
                 form.DoSnapshot = false;
                 form.Invalidate();              // refresh IF it's changed
