@@ -21,7 +21,7 @@ namespace Profiler
             this.ClientSize = new System.Drawing.Size(1200, 600);
             this.DoubleBuffered = true;
             this.Name = "ProfilerForm";
-            this.Text = "CSpect FlameGraph Profiler";
+            this.Text = "CSpect Profiler";
             this.FormClosed += new System.Windows.Forms.FormClosedEventHandler(this.CopperDissForm_FormClosed);
             this.ResumeLayout(false);
         }
