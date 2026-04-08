@@ -29,6 +29,11 @@ namespace Profiler
         Button btnStartStop;
         TabControl tabControl;
 
+        // Status bar
+        StatusStrip statusStrip;
+        ToolStripStatusLabel sampleCountLabel;
+        long lastDisplayedSampleCount = -1;
+
         // Original profiler tab
         DoubleBufferedPanel profilePanel;
         int[] profileData;
@@ -48,6 +53,7 @@ namespace Profiler
 
         const int FRAME_HEIGHT = 16;
         const int TOOLBAR_HEIGHT = 34;
+        const int STATUS_HEIGHT = 22;
 
         public static readonly string DEFAULT_EXCLUDE = "WAIT, HALT, IDLE, VSYNC, VBLANK, VLINE";
 
@@ -74,10 +80,10 @@ namespace Profiler
 
 
 
-            // Tab control with two tabs
+            // Tab control with two tabs (sized to leave room for status strip)
             tabControl = new TabControl();
             tabControl.Location = new Point(0, TOOLBAR_HEIGHT);
-            tabControl.Size = new Size(1200, 616);
+            tabControl.Size = new Size(1200, 650 - TOOLBAR_HEIGHT - STATUS_HEIGHT);
             tabControl.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
 
             // Tab 1: Profile Overview (original)
@@ -110,6 +116,27 @@ namespace Profiler
             };
 
             this.Controls.Add(tabControl);
+
+            // Status strip with sizing grip and live sample count label
+            statusStrip = new StatusStrip();
+            statusStrip.SizingGrip = true;
+            sampleCountLabel = new ToolStripStatusLabel();
+            sampleCountLabel.Text = "Samples: 0";
+            sampleCountLabel.Spring = true;
+            sampleCountLabel.TextAlign = ContentAlignment.MiddleLeft;
+            statusStrip.Items.Add(sampleCountLabel);
+            this.Controls.Add(statusStrip);
+        }
+
+        // Called from the OS thread (via ProfilerPlugin.OSTick) to update the
+        // status strip with the current sample count while sampling is active.
+        // Updates only when the value actually changes to avoid wasted work.
+        public void UpdateSampleCount(long count)
+        {
+            if (sampleCountLabel == null) return;
+            if (count == lastDisplayedSampleCount) return;
+            lastDisplayedSampleCount = count;
+            sampleCountLabel.Text = "Samples: " + count.ToString("N0");
         }
 
         void BtnStartStop_Click(object sender, EventArgs e)

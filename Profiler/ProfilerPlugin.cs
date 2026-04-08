@@ -65,16 +65,42 @@ namespace Profiler
         {
             return InternalLabelRegex.IsMatch(name);
         }
-        const int MAX_STACK_DEPTH = 12;
-        const int MAX_STACK_SCAN = 64;  // max bytes to scan from SP
-        const int MAX_CONSECUTIVE_SKIP = 6; // stop after this many non-return entries in a row
 
-        // MMU state for Z80-to-physical address conversion
+        // MMU state for Z80-to-physical address conversion.
+        // Initialized once on first use (e.g. first Tick or first Memory_EXE
+        // hook), then updated incrementally via NextReg_Write hooks for
+        // registers $50-$57.
         byte[] mmuState = new byte[8];
         bool mmuStateRead = false;
 
-        // Initial stack pointer from CRT (z88dk REGISTER_SP). 0 = unknown.
-        int stackBase = 0;
+        // Set of MMU slot indices (0-7) that contain banked code. A slot is
+        // "banked" if any PAGE_X or BANK_X section has its ORG within that
+        // slot. For banked slots we convert Z80→physical using the current
+        // MMU page, since multiple banks can share the same Z80 address. For
+        // non-banked slots we use the Z80 address directly as the key — this
+        // avoids depending on the NEX loader's page assignment, which can
+        // place slot 4 and slot 5 on non-consecutive physical pages and
+        // break the lookup for functions that straddle the slot boundary.
+        HashSet<int> bankedSlots = new HashSet<int>();
+
+
+        // Set of Z80 addresses where a function entry exists (deduplicated
+        // across banks). Populated during map loading. Used in Init() to
+        // register Memory_EXE hooks at every function entry, so we can
+        // maintain an in-plugin shadow call stack.
+        HashSet<ushort> functionEntryZ80Addrs = new HashSet<ushort>();
+
+        // In-plugin shadow call stack. Each frame holds the physical
+        // address of a function entry and the SP at the moment of entry.
+        // Updated by Memory_EXE hooks (push) and on the next entry that
+        // arrives with an SP >= a previous entry's SP (pop the previous).
+        struct ShadowFrame
+        {
+            public int PhysAddr;
+            public int Sp;
+        }
+        List<ShadowFrame> shadowStack = new List<ShadowFrame>();
+        const int MAX_SHADOW_DEPTH = 64;
 
         // z88dk deferred symbol conversion
         // Symbols loaded from z88dk map before MMU state is known.
@@ -103,6 +129,34 @@ namespace Profiler
 
             List<sIO> ports = new List<sIO>();
             ports.Add(new sIO("<ctrl><alt>p", eAccess.KeyPress, 0));
+
+            // Register NextReg_Write hooks for the 8 MMU slot registers
+            // ($50-$57). We mirror the MMU state in `mmuState` so we can
+            // convert Z80 addresses to physical without polling 8 registers
+            // every Tick().
+            for (byte reg = 0x50; reg <= 0x57; reg++)
+                ports.Add(new sIO(reg, eAccess.NextReg_Write));
+
+            // Load symbols early. This populates `functionEntryZ80Addrs`
+            // (the Z80 addresses we want to hook for shadow-call-stack
+            // tracking).
+            GetSymbols();
+
+            // Register a Memory_EXE hook at every Z80 address where a
+            // function entry lives. The hook fires when execution reaches
+            // that address; we use it to push a frame onto the shadow stack.
+            // Many addresses may resolve to multiple banked symbols — that's
+            // fine, the actual physical address is determined at hook-fire
+            // time using the current MMU state.
+            int hookCount = 0;
+            foreach (ushort z80Addr in functionEntryZ80Addrs)
+            {
+                ports.Add(new sIO(z80Addr, eAccess.Memory_EXE));
+                hookCount++;
+            }
+            Console.WriteLine("Profiler: Registered " + hookCount +
+                " function-entry execution hooks");
+
             return ports;
         }
 
@@ -152,7 +206,8 @@ namespace Profiler
 
         public void StartSampling()
         {
-            GetSymbols(); // ensure symbols + validCodeAddrs are loaded before sampling
+            // Symbols and shadow stack are already running from Init() —
+            // we just clear the per-sampling-session counters here.
             pcSamples.Clear();
             totalSamples = 0;
             lastResolvedStacks = null;
@@ -185,10 +240,57 @@ namespace Profiler
         public byte Read(eAccess _type, int _address, int _id, out bool _isvalid)
         {
             _isvalid = false;
+
+            if (_type == eAccess.Memory_EXE)
+            {
+                // Execution has reached a registered function entry. The CALL
+                // that brought us here just pushed the return address; sp now
+                // points to it. We maintain a shadow call stack using SP as
+                // the "frame depth" indicator: a function called from a
+                // parent has a STRICTLY LOWER sp than the parent's entry sp,
+                // because the CALL pushed at least 2 bytes.
+                if (!mmuStateRead)
+                {
+                    for (int i = 0; i < 8; i++)
+                        mmuState[i] = CSpect.GetNextRegister((byte)(0x50 + i));
+                    mmuStateRead = true;
+                    if (pendingZ88dkSymbols != null)
+                        FinalizeZ88dkSymbols();
+                }
+
+                int physAddr = ToPhysical(_address);
+                Z80Regs regs = CSpect.GetRegs();
+                int sp = regs.SP;
+
+                // Pop frames whose recorded SP is at or below the current SP.
+                // Those functions have already returned (because the new
+                // call's sp is "deeper" than them, or equal in tail-call
+                // case).
+                while (shadowStack.Count > 0 &&
+                       shadowStack[shadowStack.Count - 1].Sp <= sp)
+                {
+                    shadowStack.RemoveAt(shadowStack.Count - 1);
+                }
+
+                // Push the current function
+                if (shadowStack.Count < MAX_SHADOW_DEPTH)
+                {
+                    shadowStack.Add(new ShadowFrame
+                    {
+                        PhysAddr = physAddr,
+                        Sp = sp
+                    });
+                }
+            }
+
             return 0;
         }
 
-        public void Reset() { }
+        public void Reset()
+        {
+            // On machine reset, the call stack is gone. Clear our shadow.
+            shadowStack.Clear();
+        }
 
         // ---- MMU / address conversion ----
 
@@ -206,10 +308,19 @@ namespace Profiler
             }
         }
 
+        // Convert a Z80 address to a "lookup key":
+        //   - Banked slot: page * 0x2000 + offset (the actual physical address)
+        //   - Non-banked slot: the Z80 address itself
+        // Storage in cachedSymbols / publicSymbolAddrs uses the same encoding,
+        // so the lookup is consistent. Non-banked code doesn't depend on the
+        // current MMU state, which is important because slot 4 and slot 5
+        // may not be on consecutive physical pages.
         int ToPhysical(int z80Addr)
         {
             int slot = (z80Addr >> 13) & 7;
-            return mmuState[slot] * 0x2000 + (z80Addr & 0x1FFF);
+            if (bankedSlots.Contains(slot))
+                return mmuState[slot] * 0x2000 + (z80Addr & 0x1FFF);
+            return z80Addr;
         }
 
         // ---- Sampling ----
@@ -218,7 +329,9 @@ namespace Profiler
         {
             if (!IsSampling) return;
 
-            ReadMmuState();
+            // First-time MMU read: shadow may be unset if no NextReg writes
+            // have happened yet between Init() and the first Tick.
+            if (!mmuStateRead) ReadMmuState();
 
             Z80Regs regs = CSpect.GetRegs();
             int pc = regs.PC;
@@ -284,63 +397,24 @@ namespace Profiler
             if (ignoredPages.Count > 0 && ignoredPages.Contains(physPc >> 4))
                 return;
 
-            totalSamples++;
-
-            var stack = new List<int>();
-            stack.Add(physPc);
-
-            // Call-chain consistency: each return address found on the stack
-            // must point to a CALL instruction whose target is the function
-            // containing the previous frame's address (or PC for frame 0).
-            // This rejects coincidental CD-byte sequences in stack data that
-            // would otherwise pass IsReturnAddress validation.
-            var symbols = GetSymbols();
-            int expectedTarget = LookupFunctionStart(symbols, physPc);
-
-            int framesFound = 0;
-            int consecutiveSkips = 0;
-            int maxScan = MAX_STACK_SCAN / 2;
-            int stackLimit = (stackBase > 0) ? stackBase : 0xFFFE;
-            for (int depth = 0; depth < maxScan && framesFound < MAX_STACK_DEPTH; depth++)
+            // Reconcile the shadow stack against the live SP. Any frames
+            // recorded with SP < current SP have already returned (we don't
+            // hook RETs). Pop them now.
+            while (shadowStack.Count > 0 &&
+                   shadowStack[shadowStack.Count - 1].Sp < sp)
             {
-                int addr = sp + depth * 2;
-                if (addr >= stackLimit) break;
-
-                byte lo = CSpect.Peek((ushort)addr);
-                byte hi = CSpect.Peek((ushort)(addr + 1));
-                int retAddr = lo | (hi << 8);
-
-                bool accepted = false;
-                if (IsCallReturn(retAddr, expectedTarget))
-                {
-                    int physRetAddr = ToPhysical(retAddr);
-                    // Only accept if the address is in a known code region.
-                    // (Don't reject function-entry addresses — they're legit
-                    // when one function immediately follows another's CALL,
-                    // e.g. CRT's `call _main` followed by __Exit label.)
-                    if (validCodeAddrs.Count == 0 || validCodeAddrs.Contains(physRetAddr >> 8))
-                    {
-                        stack.Add(physRetAddr);
-                        framesFound++;
-                        consecutiveSkips = 0;
-                        accepted = true;
-
-                        // For the next frame, the CALL target must be the
-                        // function containing this return address.
-                        int nextExpected = LookupFunctionStart(symbols, physRetAddr);
-                        if (nextExpected >= 0) expectedTarget = nextExpected;
-                    }
-                }
-
-                if (!accepted)
-                {
-                    consecutiveSkips++;
-                    if (consecutiveSkips >= MAX_CONSECUTIVE_SKIP)
-                        break; // likely past the valid stack
-                }
+                shadowStack.RemoveAt(shadowStack.Count - 1);
             }
 
-            stack.Reverse();
+            totalSamples++;
+
+            // Build the sample frame chain: shadow stack frames from oldest
+            // to newest, then the current PC as the leaf.
+            var stack = new List<int>();
+            for (int i = 0; i < shadowStack.Count; i++)
+                stack.Add(shadowStack[i].PhysAddr);
+            stack.Add(physPc);
+
             string key = string.Join(";", stack);
 
             if (pcSamples.ContainsKey(key))
@@ -365,6 +439,11 @@ namespace Profiler
                     form.BringToFront();
                 }
             }
+
+            // Live sample-count update on the status strip while sampling.
+            // OSTick runs on the OS thread, so it's safe to touch UI here.
+            if (Active && form != null && IsSampling)
+                form.UpdateSampleCount(totalSamples);
         }
 
         // ---- Symbol loading ----
@@ -373,57 +452,51 @@ namespace Profiler
         {
             if (cachedSymbols != null) return cachedSymbols;
 
-            string mapFilePath = "";
+            // Use CSpect's own LoadFile() to find the map file. CSpect knows
+            // where the .nex was loaded from (SD card or MMC root) and will
+            // resolve the path the same way. We just give it the same name
+            // with the extension swapped to .map.
+            string fileName = "";
             try
             {
                 object fn = CSpect.GetGlobal(eGlobal.file_name);
-                if (fn is string && !string.IsNullOrEmpty((string)fn))
-                    mapFilePath = Path.ChangeExtension((string)fn, ".map");
+                if (fn is string) fileName = (string)fn;
             }
             catch { }
 
-            cachedSymbols = LoadMapFile(mapFilePath);
+            cachedSymbols = new List<KeyValuePair<int, string>>();
+            if (string.IsNullOrEmpty(fileName))
+            {
+                Console.WriteLine("Profiler: No file_name from CSpect — no symbols loaded");
+                return cachedSymbols;
+            }
+
+            // Try the map next to the .nex via CSpect's loader
+            string mapName = Path.ChangeExtension(fileName, ".map");
+            byte[] mapBytes = null;
+            try { mapBytes = CSpect.LoadFile(mapName); } catch { }
+
+            // Some CSpect versions strip leading "./" — try the bare name too
+            if (mapBytes == null)
+            {
+                string trimmed = mapName.TrimStart('.', '\\', '/');
+                if (trimmed != mapName)
+                {
+                    try { mapBytes = CSpect.LoadFile(trimmed); } catch { }
+                }
+            }
+
+            if (mapBytes == null)
+            {
+                Console.WriteLine("Profiler: Map file not found via CSpect LoadFile: " + mapName);
+                return cachedSymbols;
+            }
+
+            Console.WriteLine("Profiler: Loaded map file via CSpect (" + mapBytes.Length + " bytes): " + mapName);
+            string[] lines = System.Text.Encoding.ASCII.GetString(mapBytes)
+                .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            cachedSymbols = LoadMapLines(lines);
             return cachedSymbols;
-        }
-
-        // ---- Stack walking validation ----
-
-        // Check if `addr` looks like a return address from a CALL whose
-        // target equals `expectedTarget` (physical address). If
-        // expectedTarget is -1, accepts any valid public-function CALL target.
-        //
-        // Note: RST instructions are NOT accepted as return-address producers.
-        // RST validation has no target operand, so the check would pass on any
-        // byte matching the RST bit pattern (incl. $FF which is extremely
-        // common in code). z88dk uses CALL almost exclusively anyway.
-        bool IsCallReturn(int addr, int expectedTarget)
-        {
-            if (addr < 3 || addr > 0xFFFF) return false;
-            // Note: addresses below $4000 used to be filtered as "ROM", but
-            // banked code (e.g. z88dk BANK_22 with ORG $0000) lives there too.
-            // The validCodeAddrs check on the physical address handles ROM filtering.
-
-            // CALL nn = CD xx xx (3 bytes), conditional CALL cc,nn = C4/CC/D4/DC/E4/EC/F4 (3 bytes)
-            byte opcode = CSpect.Peek((ushort)(addr - 3));
-            bool isCall = opcode == 0xCD || opcode == 0xC4 || opcode == 0xCC ||
-                          opcode == 0xD4 || opcode == 0xDC || opcode == 0xE4 ||
-                          opcode == 0xEC || opcode == 0xF4;
-            if (!isCall) return false;
-
-            int target = CSpect.Peek((ushort)(addr - 2)) |
-                         (CSpect.Peek((ushort)(addr - 1)) << 8);
-            int physTarget = ToPhysical(target);
-
-            if (expectedTarget >= 0)
-            {
-                // Strict: target must match the expected function start
-                return physTarget == expectedTarget;
-            }
-            else
-            {
-                // Loose: target must be a known public function entry
-                return publicSymbolAddrs.Count == 0 || publicSymbolAddrs.Contains(physTarget);
-            }
         }
 
         // ---- Resolve and dump ----
@@ -494,8 +567,14 @@ namespace Profiler
                     }
                 }
 
+                // Generate the interactive flame graph SVG from the same data
+                string svgPath = "flamegraph.svg";
+                FlameGraph.Write(resolvedStacks, svgPath,
+                    "CSpect Profile (" + totalSamples + " samples)");
+
                 Console.WriteLine("Written: " + Path.GetFullPath(outPath));
                 Console.WriteLine("Written: " + Path.GetFullPath(summaryPath));
+                Console.WriteLine("Written: " + Path.GetFullPath(svgPath));
             }
             catch (Exception ex)
             {
@@ -514,17 +593,13 @@ namespace Profiler
 
         // ---- Map file loading ----
 
-        List<KeyValuePair<int, string>> LoadMapFile(string path)
+        // Detects the map format (sjasmplus vs z88dk) from the first line and
+        // dispatches to the appropriate loader. Used by both the disk-based
+        // LoadMapFile and the CSpect-LoadFile-based path in GetSymbols.
+        List<KeyValuePair<int, string>> LoadMapLines(string[] lines)
         {
             var symbols = new List<KeyValuePair<int, string>>();
-            if (string.IsNullOrEmpty(path) || !File.Exists(path))
-            {
-                Console.WriteLine("Map file not found: " + path);
-                return symbols;
-            }
-
-            string[] lines = File.ReadAllLines(path);
-            if (lines.Length == 0) return symbols;
+            if (lines == null || lines.Length == 0) return symbols;
 
             string firstLine = "";
             foreach (string l in lines)
@@ -547,8 +622,20 @@ namespace Profiler
             }
         }
 
+        List<KeyValuePair<int, string>> LoadMapFile(string path)
+        {
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+            {
+                Console.WriteLine("Profiler: Map file not found: " + path);
+                return new List<KeyValuePair<int, string>>();
+            }
+            Console.WriteLine("Profiler: Loading map file: " + path);
+            return LoadMapLines(File.ReadAllLines(path));
+        }
+
         // sjasmplus format: "Z80ADDR  PHYSADDR TYPE NAME"
-        // Column 2 is the physical address in the Next's 2MB space.
+        // Column 1 is the Z80 address; column 2 is the physical address
+        // in the Next's 2MB space.
         List<KeyValuePair<int, string>> LoadMapSjasmplus(string[] lines)
         {
             var symbols = new List<KeyValuePair<int, string>>();
@@ -564,8 +651,18 @@ namespace Profiler
                         StringSplitOptions.RemoveEmptyEntries);
                     if (parts.Length < 4) continue;
 
+                    // sjasmplus type codes:
+                    //   00 = code label / function
+                    //   01 = I/O port or data (e.g. MEMORY_PAGING_CONTROL_PORT = $7FFD)
+                    //   02 = constant
+                    // Only type 00 is real executable code.
                     string typeStr = parts[2];
-                    if (typeStr == "02") continue;
+                    if (typeStr != "00") continue;
+
+                    int z80Addr;
+                    if (!int.TryParse(parts[0], System.Globalization.NumberStyles.HexNumber,
+                        null, out z80Addr))
+                        continue;
 
                     int physAddr;
                     if (!int.TryParse(parts[1], System.Globalization.NumberStyles.HexNumber,
@@ -577,6 +674,11 @@ namespace Profiler
 
                     validCodeAddrs.Add(physAddr >> 8);
 
+                    // sjasmplus stores physical addresses for all symbols, so
+                    // EVERY slot must use MMU translation at lookup time. Mark
+                    // the symbol's slot as banked.
+                    bankedSlots.Add((z80Addr >> 13) & 7);
+
                     // sjasmplus local labels use FUNCTION@LABEL syntax
                     // (e.g. UPDATEACTORMOVER@PASS2 is a label inside
                     // UPDATEACTORMOVER). Treat these as internal — they
@@ -586,6 +688,8 @@ namespace Profiler
                     {
                         publicSymbolAddrs.Add(physAddr);
                         symbols.Add(new KeyValuePair<int, string>(physAddr, name));
+                        if (z80Addr >= 0 && z80Addr <= 0xFFFF)
+                            functionEntryZ80Addrs.Add((ushort)z80Addr);
                     }
                 }
                 catch { }
@@ -593,6 +697,12 @@ namespace Profiler
 
             symbols.Sort((a, b) => a.Key.CompareTo(b.Key));
             Console.WriteLine("Loaded " + symbols.Count + " function symbols (sjasmplus, physical addresses)");
+            if (bankedSlots.Count > 0)
+            {
+                var sorted = new List<int>(bankedSlots);
+                sorted.Sort();
+                Console.WriteLine("Profiler: Banked MMU slots: " + string.Join(",", sorted));
+            }
             return symbols;
         }
 
@@ -622,14 +732,6 @@ namespace Profiler
                 int semiIdx = rest.IndexOf(';');
                 string addrStr = (semiIdx >= 0 ? rest.Substring(0, semiIdx) : rest).Trim().TrimStart('$');
 
-                if (name == "REGISTER_SP")
-                {
-                    int spVal;
-                    if (int.TryParse(addrStr, System.Globalization.NumberStyles.HexNumber, null, out spVal))
-                        stackBase = spVal;
-                    continue;
-                }
-
                 string idStr = null;
                 Dictionary<int, int> targetDict = null;
                 if (name.StartsWith("CRT_ORG_PAGE_"))
@@ -657,8 +759,12 @@ namespace Profiler
             if (pageOrgs.Count > 0 || bankOrgs.Count > 0)
                 Console.WriteLine("Profiler: Found " + pageOrgs.Count + " PAGE + " +
                     bankOrgs.Count + " BANK ORG definitions");
-            if (stackBase > 0)
-                Console.WriteLine("Profiler: Stack base (REGISTER_SP) = $" + stackBase.ToString("X4"));
+
+            // bankedSlots is populated lazily in the second pass below, only
+            // for sections that ACTUALLY contain symbols. We do NOT add slots
+            // based on CRT_ORG_PAGE_X / CRT_ORG_BANK_X constants alone — z88dk
+            // defines defaults for every possible page (0-223), and adding all
+            // of them would mark code_compiler slots as banked and break lookup.
 
             // Second pass: load symbols
             foreach (string line in lines)
@@ -714,6 +820,8 @@ namespace Profiler
                     // PAGE_XX = 8KB page; physical = X * 0x2000 + (z80 - org)
                     // BANK_XX = 16KB bank (= 2 consecutive 8KB pages X*2 and X*2+1);
                     //           physical = X * 0x4000 + (z80 - org)
+                    // Mark the slot(s) this symbol occupies as banked, so
+                    // ToPhysical() knows to use MMU translation for them.
                     int physAddrBanked = -1;
                     if (section.StartsWith("PAGE_"))
                     {
@@ -723,6 +831,7 @@ namespace Profiler
                         {
                             int org = pageOrgs.ContainsKey(pageNum) ? pageOrgs[pageNum] : (addr & 0xE000);
                             physAddrBanked = pageNum * 0x2000 + (addr - org);
+                            bankedSlots.Add((addr >> 13) & 7);
                         }
                     }
                     else if (section.StartsWith("BANK_"))
@@ -733,6 +842,7 @@ namespace Profiler
                         {
                             int org = bankOrgs.ContainsKey(bankNum) ? bankOrgs[bankNum] : (addr & 0xC000);
                             physAddrBanked = bankNum * 0x4000 + (addr - org);
+                            bankedSlots.Add((addr >> 13) & 7);
                         }
                     }
 
@@ -746,6 +856,8 @@ namespace Profiler
                         {
                             publicSymbolAddrs.Add(physAddrBanked);
                             symbols.Add(new KeyValuePair<int, string>(physAddrBanked, name));
+                            if (addr >= 0 && addr <= 0xFFFF)
+                                functionEntryZ80Addrs.Add((ushort)addr);
                         }
                     }
                     else
@@ -761,6 +873,8 @@ namespace Profiler
                             BankPage = -1,
                             BankOrg = 0
                         });
+                        if (isFunction && addr >= 0 && addr <= 0xFFFF)
+                            functionEntryZ80Addrs.Add((ushort)addr);
                     }
                 }
                 catch { }
@@ -792,8 +906,19 @@ namespace Profiler
             }
 
             symbols.Sort((a, b) => a.Key.CompareTo(b.Key));
-            Console.WriteLine("Loaded " + symbols.Count + " symbols (" + codeSymbols +
-                " code, z88dk, " + pageOrgs.Count + " PAGEs, " + bankOrgs.Count + " BANKs)");
+            Console.WriteLine("Loaded " + symbols.Count + " z88dk symbols (" + codeSymbols +
+                " code; " + pageOrgs.Count + " PAGE defs / " + bankOrgs.Count + " BANK defs)");
+            if (bankedSlots.Count > 0)
+            {
+                var sorted = new List<int>(bankedSlots);
+                sorted.Sort();
+                Console.WriteLine("Profiler: Banked MMU slots actually used: " +
+                    string.Join(",", sorted));
+            }
+            else
+            {
+                Console.WriteLine("Profiler: No banked code (all symbols use Z80 addresses)");
+            }
             return symbols;
         }
 
@@ -841,23 +966,24 @@ namespace Profiler
             return string.Format("0x{0:X4}", physAddr);
         }
 
-        // Returns the physical start address of the function containing physAddr,
-        // or -1 if no function found.
-        int LookupFunctionStart(List<KeyValuePair<int, string>> symbols, int physAddr)
-        {
-            if (symbols.Count == 0) return -1;
-            int lo = 0, hi = symbols.Count - 1, best = -1;
-            while (lo <= hi)
-            {
-                int mid = (lo + hi) / 2;
-                if (symbols[mid].Key <= physAddr) { best = mid; lo = mid + 1; }
-                else hi = mid - 1;
-            }
-            return best >= 0 ? symbols[best].Key : -1;
-        }
-
         public bool Write(eAccess _type, int _port, int _id, byte _value)
         {
+            if (_type == eAccess.NextReg_Write && _port >= 0x50 && _port <= 0x57)
+            {
+                // Mirror the MMU register write into our shadow state. We
+                // don't claim the write — we let CSpect process it normally.
+                if (!mmuStateRead)
+                {
+                    // First-time fill: read the other 7 slots so the
+                    // shadow is fully populated, then mark as read.
+                    for (int i = 0; i < 8; i++)
+                        mmuState[i] = CSpect.GetNextRegister((byte)(0x50 + i));
+                    mmuStateRead = true;
+                    if (pendingZ88dkSymbols != null)
+                        FinalizeZ88dkSymbols();
+                }
+                mmuState[_port - 0x50] = _value;
+            }
             return false;
         }
     }

@@ -52,6 +52,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ProfilerPlugin.cs" />
+    <Compile Include="FlameGraph.cs" />
     <Compile Include="ProfilerForm.cs">
       <SubType>Form</SubType>
     </Compile>
