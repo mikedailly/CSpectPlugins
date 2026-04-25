@@ -102,6 +102,25 @@ namespace Profiler
         List<ShadowFrame> shadowStack = new List<ShadowFrame>();
         const int MAX_SHADOW_DEPTH = 64;
 
+        // Foreground shadow stack snapshot saved during ISR execution. When an
+        // IM2 interrupt fires, the foreground stack is set aside and a fresh
+        // stack is built for the ISR's call chain. Once SP rises back to or
+        // above `interruptEntrySp` (RETI/RET pops the IRQ-pushed return), the
+        // foreground stack is restored. Without this, ISR samples either show
+        // foreground frames as their parents, or stale ISR frames leak into
+        // subsequent samples (the `MUSICAY1;PT3PLAYER;…` problem in Monty).
+        List<ShadowFrame> savedShadowStack = null;
+        int interruptEntrySp = -1;
+
+        // Cached set of every 2-byte word found in the IM2 vector table at
+        // I*256. Any function whose entry address matches one of these is a
+        // candidate ISR handler. Refreshed lazily when `regs.I` changes.
+        // Covers both:
+        //   - uniform-fill tables (z88dk pattern: byte X repeated, JP at $XXXX)
+        //   - explicit pointer tables (each 2-byte entry is a handler address)
+        HashSet<int> im2HandlerTargets = null;
+        int cachedIm2I = -1;
+
         // z88dk deferred symbol conversion
         // Symbols loaded from z88dk map before MMU state is known.
         // Banked symbols (PAGE_XX) get physical addresses immediately.
@@ -152,6 +171,23 @@ namespace Profiler
             foreach (ushort z80Addr in functionEntryZ80Addrs)
             {
                 ports.Add(new sIO(z80Addr, eAccess.Memory_EXE));
+                hookCount++;
+            }
+
+            // Always hook $0038 (IM1 vector) and $0066 (NMI vector) so we can
+            // detect interrupt entries even when the handler isn't a named
+            // function in the map. Without this, sjasmplus programs that use
+            // an unnamed IM1 stub at $0038 to dispatch to e.g. PT3PLAYER look
+            // identical to a normal foreground call into PT3PLAYER, and the
+            // ISR's frames leak into the foreground shadow stack.
+            if (functionEntryZ80Addrs.Add((ushort)0x0038))
+            {
+                ports.Add(new sIO((ushort)0x0038, eAccess.Memory_EXE));
+                hookCount++;
+            }
+            if (functionEntryZ80Addrs.Add((ushort)0x0066))
+            {
+                ports.Add(new sIO((ushort)0x0066, eAccess.Memory_EXE));
                 hookCount++;
             }
             Console.WriteLine("Profiler: Registered " + hookCount +
@@ -207,7 +243,14 @@ namespace Profiler
         public void StartSampling()
         {
             // Symbols and shadow stack are already running from Init() —
-            // we just clear the per-sampling-session counters here.
+            // we just clear the per-sampling-session counters here. The
+            // shadow stack is intentionally NOT cleared: the foreground
+            // frames already in it are the program's currently-active
+            // parents (e.g. `__Restart_2;_main;_Game_Update50Hz;_NES_RunMatch`),
+            // and clearing would lose them since the main loop never returns
+            // far enough to repush them. Stale ISR frames are kept out by
+            // the IFF1-gated restore + strict CALL/RST verification in the
+            // Memory_EXE hook.
             pcSamples.Clear();
             totalSamples = 0;
             lastResolvedStacks = null;
@@ -262,18 +305,66 @@ namespace Profiler
                 Z80Regs regs = CSpect.GetRegs();
                 int sp = regs.SP;
 
-                // Pop frames whose recorded SP is at or below the current SP.
-                // Those functions have already returned (because the new
-                // call's sp is "deeper" than them, or equal in tail-call
-                // case).
+                // If a previous ISR has finished, restore the foreground stack
+                // before processing this new entry. The reliable signal is
+                // IFF1 — the CPU clears it on interrupt accept and the
+                // standard ISR exit sequence is `EI; RETI`, which sets it
+                // back. Using SP alone is unsafe because some ISRs (e.g.
+                // Monty's INTERRUPT handler) switch to a private stack at
+                // a much higher address, which would otherwise look like the
+                // IRQ-pushed return had been popped.
+                if (savedShadowStack != null && regs.IFF1 && sp >= interruptEntrySp)
+                {
+                    shadowStack = savedShadowStack;
+                    savedShadowStack = null;
+                    interruptEntrySp = -1;
+                }
+
+                // Detect interrupt entry: this hook fire is the ISR handler's
+                // first instruction. Stash the foreground stack and start
+                // fresh so the ISR's call chain doesn't contaminate it.
+                if (savedShadowStack == null && IsInterruptHandlerEntry(_address, regs, sp))
+                {
+                    savedShadowStack = shadowStack;
+                    interruptEntrySp = sp;
+                    shadowStack = new List<ShadowFrame>();
+                }
+
+                // Pop 1: SP-based — frames whose recorded SP is at or below
+                // the current SP have already returned (because the new
+                // call's sp is "deeper" than them, or equal in tail-call case).
                 while (shadowStack.Count > 0 &&
                        shadowStack[shadowStack.Count - 1].Sp <= sp)
                 {
                     shadowStack.RemoveAt(shadowStack.Count - 1);
                 }
 
-                // Push the current function
-                if (shadowStack.Count < MAX_SHADOW_DEPTH)
+                // Pop 2: identity-based — if this exact function is already
+                // somewhere in the shadow stack, pop everything down to and
+                // including the old occurrence. This catches the case where
+                // SP-based reconciliation fails (function called multiple
+                // times from the same parent at different stack depths, e.g.
+                // because the parent pushed locals between calls). Treats
+                // direct recursion as "previous call returned" — acceptable
+                // trade-off for the much more common stale-frame case.
+                for (int i = shadowStack.Count - 1; i >= 0; i--)
+                {
+                    if (shadowStack[i].PhysAddr == physAddr)
+                    {
+                        while (shadowStack.Count > i)
+                            shadowStack.RemoveAt(shadowStack.Count - 1);
+                        break;
+                    }
+                }
+
+                // Push the current function. Skip the bare interrupt vector
+                // addresses ($0038, $0066) when they're not real symbols —
+                // we hook them only for interrupt-entry detection, not as
+                // call-chain frames; pushing would inject a noisy hex/nearby
+                // symbol into every ISR chain.
+                bool isVectorOnly = (_address == 0x0038 || _address == 0x0066) &&
+                                    !publicSymbolAddrs.Contains(physAddr);
+                if (!isVectorOnly && shadowStack.Count < MAX_SHADOW_DEPTH)
                 {
                     shadowStack.Add(new ShadowFrame
                     {
@@ -290,6 +381,104 @@ namespace Profiler
         {
             // On machine reset, the call stack is gone. Clear our shadow.
             shadowStack.Clear();
+            savedShadowStack = null;
+            interruptEntrySp = -1;
+            im2HandlerTargets = null;
+            cachedIm2I = -1;
+        }
+
+        // True when entering `z80Addr` is an interrupt handler's first
+        // instruction. Detection covers:
+        //   IM2 uniform-fill: at I*256+vecByte the code is `JP target`
+        //   IM2 explicit:     I*256 holds a table of direct handler pointers
+        //   IM1 / IM0:        z80Addr == 0x0038 (RST 38h vector)
+        // To distinguish a real interrupt from a foreground CALL or RST to
+        // the same function, we also verify the return address on stack is
+        // NOT immediately preceded by a CALL or RST opcode — interrupts
+        // push the interrupted PC, which is rarely positioned that way.
+        bool IsInterruptHandlerEntry(int z80Addr, Z80Regs regs, int sp)
+        {
+            bool candidate = false;
+
+            if (regs.IM == 2)
+            {
+                EnsureIm2TableCache(regs);
+                if (im2HandlerTargets != null && im2HandlerTargets.Contains(z80Addr))
+                    candidate = true;
+            }
+            else if (z80Addr == 0x0038)
+            {
+                // IM0/IM1 default vector. Foreground RST 38h is rare but
+                // possible — the CALL/RST verification below filters it out.
+                candidate = true;
+            }
+
+            if (!candidate) return false;
+
+            // Verify: the return address on stack must NOT lie immediately
+            // after a CALL or RST instruction whose target is `z80Addr`. An
+            // interrupt pushes the interrupted PC; the bytes preceding it are
+            // arbitrary, so the loose "any CALL opcode" filter has a 3-4%
+            // false-negative rate when those bytes happen to encode a CALL by
+            // coincidence — enough to lose most ISR detections when interrupts
+            // tend to fire at similar foreground PCs. The strict check (does
+            // the would-be CALL actually target THIS function?) eliminates
+            // coincidental matches while still catching genuine foreground
+            // calls to functions that are also reachable as ISRs.
+            int retAddr = CSpect.Peek((ushort)sp) |
+                          (CSpect.Peek((ushort)(sp + 1)) << 8);
+            byte preCall = CSpect.Peek((ushort)(retAddr - 3));
+            // 3-byte CALL opcodes: unconditional 0xCD, conditional 0xC4/CC/D4/DC/E4/EC/F4/FC
+            if (preCall == 0xCD || preCall == 0xC4 || preCall == 0xCC ||
+                preCall == 0xD4 || preCall == 0xDC || preCall == 0xE4 ||
+                preCall == 0xEC || preCall == 0xF4 || preCall == 0xFC)
+            {
+                int callTarget = CSpect.Peek((ushort)(retAddr - 2)) |
+                                 (CSpect.Peek((ushort)(retAddr - 1)) << 8);
+                if (callTarget == z80Addr) return false;
+            }
+            // 1-byte RST opcodes: pattern 11xxx111. Target is the embedded vector
+            // (RST 0/8/10/18/20/28/30/38 → 0x00/0x08/0x10/0x18/0x20/0x28/0x30/0x38).
+            byte preRst = CSpect.Peek((ushort)(retAddr - 1));
+            if ((preRst & 0xC7) == 0xC7)
+            {
+                int rstTarget = preRst & 0x38;
+                if (rstTarget == z80Addr) return false;
+            }
+
+            return true;
+        }
+
+        // Build (or refresh) the set of candidate IM2 handler addresses by
+        // scanning the 257-byte vector table at I*256 for every 2-byte word.
+        // Both uniform-fill tables (one repeated byte → one repeated target)
+        // and explicit pointer tables (256 distinct pointers) are covered by
+        // a single pass. We also follow a `JP nn` at the uniform-fill landing
+        // address so that the actual handler is in the set, not the trampoline.
+        void EnsureIm2TableCache(Z80Regs regs)
+        {
+            if (regs.IM != 2) { im2HandlerTargets = null; cachedIm2I = -1; return; }
+            if (im2HandlerTargets != null && cachedIm2I == regs.I) return;
+
+            var targets = new HashSet<int>();
+            int vecBase = regs.I << 8;
+
+            for (int offset = 0; offset < 256; offset++)
+            {
+                int word = CSpect.Peek((ushort)(vecBase + offset)) |
+                           (CSpect.Peek((ushort)(vecBase + offset + 1)) << 8);
+                targets.Add(word);
+                // If the landing address contains a JP, also include the JP target.
+                if (CSpect.Peek((ushort)word) == 0xC3)
+                {
+                    int jpTarget = CSpect.Peek((ushort)(word + 1)) |
+                                   (CSpect.Peek((ushort)(word + 2)) << 8);
+                    targets.Add(jpTarget);
+                }
+            }
+
+            im2HandlerTargets = targets;
+            cachedIm2I = regs.I;
         }
 
         // ---- MMU / address conversion ----
@@ -396,6 +585,18 @@ namespace Profiler
             int physPc = ToPhysical(pc);
             if (ignoredPages.Count > 0 && ignoredPages.Contains(physPc >> 4))
                 return;
+
+            // Restore the foreground shadow stack if a prior ISR has finished.
+            // IFF1=1 means the ISR's `EI; RETI` has run; using SP alone is
+            // unsafe when an ISR switches to its own stack (which would push
+            // SP higher than `interruptEntrySp` mid-ISR and falsely look like
+            // a return).
+            if (savedShadowStack != null && regs.IFF1 && sp >= interruptEntrySp)
+            {
+                shadowStack = savedShadowStack;
+                savedShadowStack = null;
+                interruptEntrySp = -1;
+            }
 
             // Reconcile the shadow stack against the live SP. Any frames
             // recorded with SP < current SP have already returned (we don't

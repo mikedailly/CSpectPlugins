@@ -436,7 +436,11 @@ namespace Profiler
             if (parentWidth < 2) return;
 
             float cx = x;
-            var sorted = parent.Children.Values.OrderByDescending(c => c.Total).ToList();
+            // Sort alphabetically (Brendan Gregg's flame graph convention) so
+            // sibling layout is stable and matches the SVG output. Sorting by
+            // sample count instead would put hot frames on the left, which
+            // moves around between runs and mismatches flamegraph.svg.
+            var sorted = parent.Children.Values.OrderBy(c => c.Name, StringComparer.Ordinal).ToList();
             foreach (var child in sorted)
             {
                 float childWidth = (float)child.Total * xScale;
