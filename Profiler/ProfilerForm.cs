@@ -435,7 +435,15 @@ namespace Profiler
             if (y < 24) return;
             if (parentWidth < 2) return;
 
-            float cx = x;
+            // Reserve the parent's self-time on the LEFT of the children
+            // band. This matches the SVG, which sorts entire chain strings:
+            // a chain that ends at this parent (no further children) sorts
+            // before any chain that descends into a named child, so the
+            // exposed parent bar always sits on the left and named children
+            // on the right. Without this offset, children would draw flush-
+            // left and the exposed self-time bar would appear on the right —
+            // a mirror image of flamegraph.svg.
+            float cx = x + (float)parent.Self * xScale;
             // Sort alphabetically (Brendan Gregg's flame graph convention) so
             // sibling layout is stable and matches the SVG output. Sorting by
             // sample count instead would put hot frames on the left, which
