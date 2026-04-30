@@ -1,4 +1,5 @@
 *.suo
+.vs/
 CSpectPlugins/.vs/
 CopperDissassembler/bin/
 CopperDissassembler/obj/
