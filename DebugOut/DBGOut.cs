@@ -268,18 +268,37 @@ namespace DebugOut
                         c = (char)DebugString[index++];
                     }
 
+                    // 32bit numbers?
+                    int NumSize = 16;
+                    if (c == 'l')
+                    {
+                        NumSize = 32;
+                        c = (char)DebugString[index++];
+                    }
+
                     switch (c)
                     {
                         // hex output
                         case 'x':
                         case 'X':
                             {
-                                UInt32 v = CSpect.Peek((UInt16)add++);
-                                v |= (((UInt32)CSpect.Peek((UInt16)add++))<<8);
-                                v |= (((UInt32)CSpect.Peek((UInt16)add++)) << 16);
-                                v |= (((UInt32)CSpect.Peek((UInt16)add++)) << 24);
+                                UInt32 v;
                                 if (digits < 0) digits = 0;
-                                if (digits > 8) digits = 8;
+                                if (NumSize == 16)
+                                {
+                                    // 16bit
+                                    v = CSpect.Peek((UInt16)add++);
+                                    v |= (((UInt32)CSpect.Peek((UInt16)add++)) << 8);
+                                    if (digits > 4) digits = 4;
+                                }
+                                else
+                                {
+                                    v = CSpect.Peek((UInt16)add++);
+                                    v |= (((UInt32)CSpect.Peek((UInt16)add++)) << 8);
+                                    v |= (((UInt32)CSpect.Peek((UInt16)add++)) << 16);
+                                    v |= (((UInt32)CSpect.Peek((UInt16)add++)) << 24);
+                                    if (digits > 8) digits = 8;
+                                }
                                 v &= digitmask[digits];
                                 string hex = string.Format("{0:"+c + digits.ToString() + "}", v);
                                 final_string += hex;
@@ -287,20 +306,37 @@ namespace DebugOut
                             }
                         case 'd':
                             {
-                                Int32 v = CSpect.Peek((UInt16)add++);
-                                v |= (((Int32)CSpect.Peek((UInt16)add++)) << 8);
-                                v |= (((Int32)CSpect.Peek((UInt16)add++)) << 16);
-                                v |= (((Int32)CSpect.Peek((UInt16)add++)) << 24);
+                                Int32 v;
+                                if (NumSize == 16)
+                                {
+                                    v = CSpect.Peek((UInt16)add++);
+                                    v |= (((Int32)CSpect.Peek((UInt16)add++)) << 8);
+                                }
+                                else
+                                {
+                                    v = CSpect.Peek((UInt16)add++);
+                                    v |= (((Int32)CSpect.Peek((UInt16)add++)) << 8);
+                                    v |= (((Int32)CSpect.Peek((UInt16)add++)) << 16);
+                                    v |= (((Int32)CSpect.Peek((UInt16)add++)) << 24);
+                                }
                                 final_string += v.ToString();
                                 break;
                             }
                         case 'b':
                             {
-                                Int32 v = CSpect.Peek((UInt16)add++);
-                                v |= (((Int32)CSpect.Peek((UInt16)add++)) << 8);
-                                v |= (((Int32)CSpect.Peek((UInt16)add++)) << 16);
-                                v |= (((Int32)CSpect.Peek((UInt16)add++)) << 24);
-
+                                Int32 v;
+                                if (NumSize == 16)
+                                {
+                                    v = CSpect.Peek((UInt16)add++);
+                                    v |= (((Int32)CSpect.Peek((UInt16)add++)) << 8);
+                                }
+                                else
+                                {
+                                    v = CSpect.Peek((UInt16)add++);
+                                    v |= (((Int32)CSpect.Peek((UInt16)add++)) << 8);
+                                    v |= (((Int32)CSpect.Peek((UInt16)add++)) << 16);
+                                    v |= (((Int32)CSpect.Peek((UInt16)add++)) << 24);
+                                }
                                 if (digits < 0) digits = 1;
                                 if (digits > 32) digits = 32;
 
