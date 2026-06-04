@@ -129,7 +129,11 @@ namespace Plugin
         profile_exe,
 
         /// <summary>Emulator pause state</summary>
-        pause
+        pause,
+        /// <summary>Freerun state</summary>
+        freerun,
+        /// <summary>Get(only) the last display rendered - returns as a UInt32[y,x] array</summary>
+        last_frame,
     }
 
     // ********************************************************************************************************************************
@@ -608,6 +612,14 @@ namespace Plugin
         /// <returns>A byte array holding the file - or null for not found</returns>
         // ------------------------------------------------------------
         byte[] LoadFile(string _name);
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Load a .NEX file - or reload last file if name is ""
+        /// </summary>
+        /// <param name="_name">Name to load, or "" to load last NEX file</param>
+        // ------------------------------------------------------------
+        void LoadNex(string _name);
 
         // ------------------------------------------------------------
         /// <summary>
