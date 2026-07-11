@@ -40,6 +40,7 @@ namespace NextRegisterViewer
 
         public RegDetails Regs;
 
+        bool FirstRun = true;
         bool doInvalidate = false;
         bool OpenNextRegWindow = false;
 
@@ -65,11 +66,6 @@ namespace NextRegisterViewer
             // Detect keypress for starting disassembler
             List<sIO> ports = new List<sIO>();
             ports.Add(new sIO("<ctrl><shift>r", eAccess.KeyPress, 0));                   // Key press callback
-
-            for (int i = 0; i < 256; i++)
-            {
-                ports.Add(new sIO(i, eAccess.NextReg_Write));
-            }
             return ports;
         }
 
@@ -122,17 +118,122 @@ namespace NextRegisterViewer
         {
         }
 
+
         // ******************************************************************************************
         /// <summary>
-        ///     Called once an emulator frame - update copper if "Active"
+        ///     Read all registers
         /// </summary>
         // ******************************************************************************************
-        public void Tick()
+        public void ReadRegisters()
         {
-            if (!Active) return;
-
-            for (int i=0;i<256;i++)
+            int i,r, r1, r2, r3, r4;
+            for (i = 0; i < 256; i++)
             {
+                switch (i)
+                {
+                    case 0x18:
+                        {
+                            // Clip Window L2
+                            r1 = CSpect.GetNextRegister(0x18, 0);
+                            r2 = CSpect.GetNextRegister(0x18, 1);
+                            r3 = CSpect.GetNextRegister(0x18, 2);
+                            r4 = CSpect.GetNextRegister(0x18, 3);
+                            if (r1 != Regs.ClipWindowLayer2[0] || r2 != Regs.ClipWindowLayer2[1] | r3 != Regs.ClipWindowLayer2[2] || r4 != Regs.ClipWindowLayer2[3])
+                            {
+                                Regs.ClipWindowLayer2[0] = r1;
+                                Regs.ClipWindowLayer2[1] = r2;
+                                Regs.ClipWindowLayer2[2] = r3;
+                                Regs.ClipWindowLayer2[3] = r4;
+                                Regs.RegisterIsWritten[0x18] = DELAY_COUNTER;
+                                doInvalidate = true;
+                            }
+                            break;
+                        }
+                    case 0x19:
+                        {
+                            // Clip Window L2
+                            r1 = CSpect.GetNextRegister(0x19, 0);
+                            r2 = CSpect.GetNextRegister(0x19, 1);
+                            r3 = CSpect.GetNextRegister(0x19, 2);
+                            r4 = CSpect.GetNextRegister(0x19, 3);
+                            if (r1 != Regs.ClipWindowSprites[0] || r2 != Regs.ClipWindowSprites[1] | r3 != Regs.ClipWindowSprites[2] || r4 != Regs.ClipWindowSprites[3])
+                            {
+                                Regs.ClipWindowSprites[0] = r1;
+                                Regs.ClipWindowSprites[1] = r2;
+                                Regs.ClipWindowSprites[2] = r3;
+                                Regs.ClipWindowSprites[3] = r4;
+                                Regs.RegisterIsWritten[0x19] = DELAY_COUNTER;
+                                doInvalidate = true;
+                            }
+                            break;
+                        }
+                    case 0x1A:
+                        {
+                            // Clip Window L2
+                            r1 = CSpect.GetNextRegister(0x1A, 0);
+                            r2 = CSpect.GetNextRegister(0x1A, 1);
+                            r3 = CSpect.GetNextRegister(0x1A, 2);
+                            r4 = CSpect.GetNextRegister(0x1A, 3);
+                            if (r1 != Regs.ClipWindowULA[0] || r2 != Regs.ClipWindowULA[1] | r3 != Regs.ClipWindowULA[2] || r4 != Regs.ClipWindowULA[3])
+                            {
+                                Regs.ClipWindowULA[0] = r1;
+                                Regs.ClipWindowULA[1] = r2;
+                                Regs.ClipWindowULA[2] = r3;
+                                Regs.ClipWindowULA[3] = r4;
+                                Regs.RegisterIsWritten[0x1A] = DELAY_COUNTER;
+                                doInvalidate = true;
+                            }
+                            break;
+                        }
+                    case 0x1B:
+                        {
+                            // Clip Window L2
+                            r1 = CSpect.GetNextRegister(0x1B, 0);
+                            r2 = CSpect.GetNextRegister(0x1B, 1);
+                            r3 = CSpect.GetNextRegister(0x1B, 2);
+                            r4 = CSpect.GetNextRegister(0x1B, 3);
+                            if (r1 != Regs.ClipWindowTilemap[0] || r2 != Regs.ClipWindowTilemap[1] | r3 != Regs.ClipWindowTilemap[2] || r4 != Regs.ClipWindowTilemap[3])
+                            {
+                                Regs.ClipWindowTilemap[0] = r1;
+                                Regs.ClipWindowTilemap[1] = r2;
+                                Regs.ClipWindowTilemap[2] = r3;
+                                Regs.ClipWindowTilemap[3] = r4;
+                                Regs.RegisterIsWritten[0x1B] = DELAY_COUNTER;
+                                doInvalidate = true;
+                            }
+                            break;
+                        }
+                    case 0x1C:
+                        {
+                            r1 = CSpect.GetNextRegister(0x1C, 0);
+                            if (r1 != Regs.NextRegisters[0x1C])
+                            {
+                                Regs.NextRegisters[0x1C] = (byte)r1;
+                                Regs.RegisterIsWritten[0x1C] = DELAY_COUNTER;
+
+                                // reset clip window index
+                                if ((r1 & 1) != 0) Regs.ClipWindowLayer2[4] = 0;
+                                if ((r1 & 2) != 0) Regs.ClipWindowSprites[4] = 0;
+                                if ((r1 & 4) != 0) Regs.ClipWindowULA[4] = 0;
+                                if ((r1 & 8) != 0) Regs.ClipWindowTilemap[4] = 0;
+                            }
+                            break;
+                        }
+                    default:
+                        {
+                            r = CSpect.GetNextRegister((byte)i, 0);
+                            if (Regs.NextRegisters[i] != r)
+                            {
+                                Regs.RegisterIsWritten[i] = DELAY_COUNTER;
+                                Regs.NextRegisters[i] = (byte)r;
+                                doInvalidate = true;
+                            }
+                            break;
+                        }
+                }
+
+
+                // Count down modified "highlight" counter
                 if (Regs.RegisterIsWritten[i] > 0)
                 {
                     Regs.RegisterIsWritten[i]--;
@@ -142,6 +243,21 @@ namespace NextRegisterViewer
                     }
                 }
             }
+        }
+
+
+
+        // ******************************************************************************************
+        /// <summary>
+        ///     Called once an emulator frame - update copper if "Active"
+        /// </summary>
+        // ******************************************************************************************
+        public void Tick()
+        {
+            if (!Active) return;
+
+            // Read all next registers every tick....
+            ReadRegisters();
         }
 
         // ******************************************************************************************
@@ -172,35 +288,6 @@ namespace NextRegisterViewer
                 }
                 doInvalidate = false;
             }
-
-            GetWindows();
-        }
-
-        public void GetWindows()
-        {
-            // Clip Window L2
-            Regs.ClipWindowLayer2[0] = CSpect.GetNextRegister(0x18, 0);
-            Regs.ClipWindowLayer2[1] = CSpect.GetNextRegister(0x18, 1);
-            Regs.ClipWindowLayer2[2] = CSpect.GetNextRegister(0x18, 2);
-            Regs.ClipWindowLayer2[3] = CSpect.GetNextRegister(0x18, 3);
-
-            // Clip Window Sprites
-            Regs.ClipWindowSprites[0] = CSpect.GetNextRegister(0x19, 0);
-            Regs.ClipWindowSprites[1] = CSpect.GetNextRegister(0x19, 1);
-            Regs.ClipWindowSprites[2] = CSpect.GetNextRegister(0x19, 2);
-            Regs.ClipWindowSprites[3] = CSpect.GetNextRegister(0x19, 3);
-
-            // Clip Window ULA
-            Regs.ClipWindowULA[0] = CSpect.GetNextRegister(0x1A, 0);
-            Regs.ClipWindowULA[1] = CSpect.GetNextRegister(0x1A, 1);
-            Regs.ClipWindowULA[2] = CSpect.GetNextRegister(0x1A, 2);
-            Regs.ClipWindowULA[3] = CSpect.GetNextRegister(0x1A, 3);
-
-            // Clip Window Tiles
-            Regs.ClipWindowTilemap[0] = CSpect.GetNextRegister(0x1B, 0);
-            Regs.ClipWindowTilemap[1] = CSpect.GetNextRegister(0x1B, 1);
-            Regs.ClipWindowTilemap[2] = CSpect.GetNextRegister(0x1B, 2);
-            Regs.ClipWindowTilemap[3] = CSpect.GetNextRegister(0x1B, 3);
         }
 
         // ******************************************************************************************
@@ -214,54 +301,6 @@ namespace NextRegisterViewer
         // ******************************************************************************************
         public bool Write(eAccess _type, int _port, int _id, byte _value)
         {
-            if(Regs.NextRegisters[_port] != _value)
-            {
-                Regs.NextRegisters[_port] = _value;
-                Regs.RegisterIsWritten[_port] = DELAY_COUNTER;
-                doInvalidate = true;
-
-                if( _port == 0x18)
-                {
-                    // Clip Window L2
-                    Regs.ClipWindowLayer2[0] = CSpect.GetNextRegister(0x18, 0);
-                    Regs.ClipWindowLayer2[1] = CSpect.GetNextRegister(0x18, 1);
-                    Regs.ClipWindowLayer2[2] = CSpect.GetNextRegister(0x18, 2);
-                    Regs.ClipWindowLayer2[3] = CSpect.GetNextRegister(0x18, 3);
-                }
-                else if (_port == 0x19)
-                {
-                    // Clip Window Sprites
-                    Regs.ClipWindowSprites[0] = CSpect.GetNextRegister(0x19, 0);
-                    Regs.ClipWindowSprites[1] = CSpect.GetNextRegister(0x19, 1);
-                    Regs.ClipWindowSprites[2] = CSpect.GetNextRegister(0x19, 2);
-                    Regs.ClipWindowSprites[3] = CSpect.GetNextRegister(0x19, 3);
-                }
-                else if (_port == 0x1A)
-                {
-                    // Clip Window ULA
-                    Regs.ClipWindowULA[0] = CSpect.GetNextRegister(0x1A, 0);
-                    Regs.ClipWindowULA[1] = CSpect.GetNextRegister(0x1A, 1);
-                    Regs.ClipWindowULA[2] = CSpect.GetNextRegister(0x1A, 2);
-                    Regs.ClipWindowULA[3] = CSpect.GetNextRegister(0x1A, 3);
-                }
-                else if (_port == 0x1B)
-                {
-                    // Clip Window Tiles
-                    Regs.ClipWindowTilemap[0] = CSpect.GetNextRegister(0x1B, 0);
-                    Regs.ClipWindowTilemap[1] = CSpect.GetNextRegister(0x1B, 1);
-                    Regs.ClipWindowTilemap[2] = CSpect.GetNextRegister(0x1B, 2);
-                    Regs.ClipWindowTilemap[3] = CSpect.GetNextRegister(0x1B, 3);
-                }
-                else if (_port == 0x1C)
-                {
-                    // reset clip window index
-                    if ((_value & 1) != 0) Regs.ClipWindowLayer2[4] = 0;
-                    if ((_value & 2) != 0) Regs.ClipWindowSprites[4] = 0;
-                    if ((_value & 4) != 0) Regs.ClipWindowULA[4] = 0;
-                    if ((_value & 8) != 0) Regs.ClipWindowTilemap[4] = 0;
-                }
-            }
-
             return false;
         }
     }
