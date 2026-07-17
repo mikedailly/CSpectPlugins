@@ -57,7 +57,7 @@ namespace MemoryViewer
         // *********************************************************************************************************
         public List<sIO> Init(iCSpect _CSpect)
         {
-            Console.WriteLine("Memory Viewer added");
+            Console.WriteLine(" Memory Viewer added");
 
             CSpect = _CSpect;
             IntPtr handle = (IntPtr)CSpect.GetGlobal(eGlobal.window_handle);

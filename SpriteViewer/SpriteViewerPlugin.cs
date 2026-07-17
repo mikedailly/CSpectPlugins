@@ -57,7 +57,7 @@ namespace SpriteViewer
         // *********************************************************************************************************
         public List<sIO> Init(iCSpect _CSpect)
         {
-            Console.WriteLine("Sprite Viewer added");
+            Console.WriteLine(" Sprite Viewer added");
 
             CSpect = _CSpect;
             IntPtr handle = (IntPtr)CSpect.GetGlobal(eGlobal.window_handle);
@@ -68,6 +68,7 @@ namespace SpriteViewer
             // Detect keypress for starting disassembler
             List<sIO> ports = new List<sIO>();
             ports.Add(new sIO("<ctrl><alt>s", eAccess.KeyPress, 0));                   // Key press callback
+            ports.Add(new sIO("<ctrl><alt>i", eAccess.KeyPress, 1));                   // Key press callback
             return ports;
         }
 
@@ -84,6 +85,12 @@ namespace SpriteViewer
             if (_id == 0)
             {
                 OpenSpriteWindow = true;
+                return true;
+            }
+            else if (_id == 1)
+            {
+                //UInt32[,] buffer = (UInt32[,])CSpect.GetGlobal(eGlobal.last_frame);
+                CSpect.LoadNex(@"C:\source\ZXSpectrum\Demo\Beast\beast.nex");
                 return true;
             }
             return false;

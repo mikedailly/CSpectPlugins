@@ -499,6 +499,21 @@ namespace Plugin
 
         // ------------------------------------------------------------
         /// <summary>
+        ///     Add a symbol
+        /// </summary>
+        /// <param name="_pszName">Symbol name</param>
+        /// <param name="_address">Symbol 64k address</param>
+        /// <param name="_physical">Symbol physical address</param>
+        /// <param name="_type">Type of symbol</param>
+        /// <returns>
+        ///     The defined symbol
+        /// </returns>
+        // ------------------------------------------------------------
+        Symbol AddSymbol(string _pszName, int _address, int _physical, eLabelType _type);
+
+
+        // ------------------------------------------------------------
+        /// <summary>
         ///     Get a sprite
         /// </summary>
         /// <param name="_index">The sprite index</param>
