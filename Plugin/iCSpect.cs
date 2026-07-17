@@ -511,6 +511,15 @@ namespace Plugin
         // ------------------------------------------------------------
         Symbol AddSymbol(string _pszName, int _address, int _physical, eLabelType _type);
 
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Hex string to Int64 - will stop on an illegal character
+        /// </summary>
+        /// <param name="_hex">String to convert ($0000, 0x0000 or just 00000)</param>
+        /// <returns>The hex string as an Int64</returns>
+        // ------------------------------------------------------------
+        Int64 HexToInt64(string _hex);
+
 
         // ------------------------------------------------------------
         /// <summary>

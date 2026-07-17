@@ -4,7 +4,7 @@
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>{C72AA647-E703-46B5-A927-158FAB2C3236}</ProjectGuid>
+    <ProjectGuid>{D189A97D-8A2C-4695-AFB6-F1DC69FE991E}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>z88dk</RootNamespace>
@@ -41,7 +41,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="z88dk.cs" />
-    <Compile Include="z88dk_ListFile.cs" />
+    <Compile Include="z88dk_MapFile.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

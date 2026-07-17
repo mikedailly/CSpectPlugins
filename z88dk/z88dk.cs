@@ -18,17 +18,17 @@ namespace Pasta80Symbols
     public class Pasta80ListFiles : iSymbol
     {
         public iCSpect CSpect;
-        public Pasta80_ListFile Pasta80;
+        public z88dk_MapFile z88dk;
 
         // **********************************************************************
         /// <summary>
         ///     Get the command line option to look for
         /// </summary>
-        /// <returns>Command line option</returns>
+        /// <returns>Command line option "-z88dk=name"</returns>
         // **********************************************************************
         public string GetCommandLineOption()
         {
-            return "pasta80";
+            return "z88dk";
         }
 
         // **********************************************************************
@@ -39,7 +39,7 @@ namespace Pasta80Symbols
         // **********************************************************************
         public string GetDescription()
         {
-            return "Load Pasta/80 .lst file and get symbols.";
+            return "Load z88dk .map file and get symbols.";
         }
 
         // **********************************************************************
@@ -50,7 +50,7 @@ namespace Pasta80Symbols
         // **********************************************************************
         public string GetName()
         {
-            return "Pasta80";
+            return "z88DK";
         }
 
         // **********************************************************************
@@ -63,11 +63,12 @@ namespace Pasta80Symbols
         // **********************************************************************
         public bool Init(iCSpect _CSpect)
         {
-            Console.WriteLine(" Pasta80 .LST file loader");
+            Console.WriteLine(" z88DK .MAP file loader");
             CSpect = _CSpect;
-            Pasta80 = new Pasta80_ListFile(CSpect);
+            z88dk = new z88dk_MapFile(CSpect);
             return true;
         }
+
         // **********************************************************************
         /// <summary>
         ///     Quit the device - free up anything we need to
@@ -78,6 +79,15 @@ namespace Pasta80Symbols
         }
 
 
+        // **********************************************************************
+        /// <summary>
+        ///     Load the requested symbol file
+        /// </summary>
+        /// <param name="_path"></param>
+        /// <returns>
+        ///     TRUE for okay, FALSE for error
+        /// </returns>
+        // **********************************************************************
         public bool LoadSymbols(string _path)
         {
             string[] pBuffer;
@@ -91,7 +101,7 @@ namespace Pasta80Symbols
                 return false;
             }
 
-            bool okay = Pasta80.LoadPasta80File(pBuffer);
+            bool okay = z88dk.LoadMapFile(pBuffer);
             return okay;
         }
     }
