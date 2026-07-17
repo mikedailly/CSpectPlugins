@@ -124,7 +124,7 @@ namespace Pasta80Symbols
 
         List<string> Ignore = new List<string>()
         {
-            "P","I","HL","AX","DE","R","Cycles","HeapStart","HeapBytes","Frequency"
+            "P","I","R"
         };
         public void ScanLine(string line)
         {

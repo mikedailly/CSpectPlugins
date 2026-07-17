@@ -1,11 +1,12 @@
-﻿using System;
+﻿using Plugin;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Text;
 using System.Threading.Tasks;
-using Plugin;
 
 namespace Pasta80Symbols
 {
@@ -92,6 +93,13 @@ namespace Pasta80Symbols
             }
 
             bool okay = Pasta80.LoadPasta80File(pBuffer);
+
+            // Add predefined symbols
+            CSpect.AddSymbol("CHAN_OPEN", (int)0x1601, (int)0x1601, eLabelType.Address);
+            CSpect.AddSymbol("CHAN_OP_1", (int)0x1610, (int)0x1601, eLabelType.Address);
+            CSpect.AddSymbol("INDEXER_1", (int)0x16db, (int)0x1601, eLabelType.Address);
+            CSpect.AddSymbol("INDEXER", (int)0x16dc, (int)0x1601, eLabelType.Address);
+            
             return okay;
         }
     }
