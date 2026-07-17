@@ -122,7 +122,10 @@ namespace Pasta80Symbols
         //   7609  9835 ~            ; var GetCpuSpeed(@RESULT)
         //   7610  9835 ~__GetCpuSpeed360:                       ; Prologue
 
-
+        List<string> Ignore = new List<string>()
+        {
+            "P","I","HL","AX","DE","R","Cycles","HeapStart","HeapBytes","Frequency"
+        };
         public void ScanLine(string line)
         {
             int index = 0;
@@ -167,11 +170,23 @@ namespace Pasta80Symbols
                 label = label.Substring(2);
             }
 
-            if (label == "SetUpIRQsSys")
+            //  "7764 9991 00           global377:      ds      1,0             ; Global gBlockX"
+            // Check to see if this is a global and has a mapping.
+            int GlobPos = line.IndexOf("; Global ");
+            string mappedlabel = "";
+            if (GlobPos > 0)
             {
-                int itit = 12;
+                GlobPos += "; Global ".Length;
+                mappedlabel = line.Substring(GlobPos).Trim();
+                foreach (string st in Ignore)
+                {
+                    if (st == mappedlabel)
+                    {
+                        mappedlabel = "";
+                        break;
+                    }
+                }
             }
-
 
             int physical = 0;
             int bank = (int)(address / 8192);
@@ -204,8 +219,14 @@ namespace Pasta80Symbols
                     break;
             }
 
-
-            Symbol pSym = CSpect.AddSymbol(label, (int)address, (int)physical, eLabelType.Address);
+            if (string.IsNullOrEmpty(mappedlabel))
+            {
+                Symbol pSym = CSpect.AddSymbol(label, (int)address, (int)physical, eLabelType.Address);
+            }
+            else
+            {
+                Symbol pSym = CSpect.AddSymbol(mappedlabel, (int)address, (int)physical, eLabelType.Address);
+            }
         }
 
 
