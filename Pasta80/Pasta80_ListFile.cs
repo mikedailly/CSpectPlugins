@@ -10,17 +10,39 @@ namespace Pasta80Symbols
 {
     public class Pasta80_ListFile
     {
+        /// <summary>Read HEX/Dec return error if no hex values found</summary>
         const Int64 ERROR_VAL = -123456789;
+        /// <summary>Text used to determain the end of the line</summary>
         const string END_TXT = "[[END]]";
 
+        /// <summary>Global labels to ignore </summary>
+        List<string> Ignore = new List<string>()
+        {
+            "P","I","R"
+        };
+
+        /// <summary>The CSpect interface</summary>
         iCSpect CSpect;
 
+        // *************************************************************************************************************************************************
+        /// <summary>
+        ///     Create new Pasta80 parser
+        /// </summary>
+        /// <param name="_CSpect">pointer to iCSpect interface</param>
+        // *************************************************************************************************************************************************
         public Pasta80_ListFile(iCSpect _CSpect)
         {
             CSpect=_CSpect;
         }
 
-
+        // *************************************************************************************************************************************************
+        /// <summary>
+        ///     Skip all whitespace in the line
+        /// </summary>
+        /// <param name="line">line of text</param>
+        /// <param name="line_index">current index</param>
+        /// <returns>new index after whitespace</returns>
+        // *************************************************************************************************************************************************
         public int SkipWhiteSpace(string line, int line_index)
         {
             while (line_index < line.Length)
@@ -31,7 +53,17 @@ namespace Pasta80Symbols
             return line_index;
         }
 
-
+        // *************************************************************************************************************************************************
+        /// <summary>
+        ///     Get next ID string
+        /// </summary>
+        /// <param name="line">whole line</param>
+        /// <param name="index">current index</param>
+        /// <param name="oLine">next position</param>
+        /// <returns>
+        ///     The next string in the line sequence
+        /// </returns>
+        // *************************************************************************************************************************************************
         public string GetNext(string line, int index, out int oLine)
         {
             index = SkipWhiteSpace(line, index);
@@ -50,19 +82,33 @@ namespace Pasta80Symbols
             return txt;
         }
 
-
+        // ****************************************************************************************************************
+        /// <summary>
+        ///     Read a decimal number, and return it or an error value
+        /// </summary>
+        /// <param name="s">decimal number to scan</param>
+        /// <returns>
+        ///     The int, or ERROR_VAL
+        /// </returns>
+        // ****************************************************************************************************************
         public Int64 ReadDec(string s)
         {
             Int64 v;
             if (!Int64.TryParse(s, out v))
             {
-                v = -123456789;
+                v = ERROR_VAL;
             }
             return v;
         }
 
 
-
+        // ****************************************************************************************************************
+        /// <summary>
+        ///     Read a HEX number, and return an error if not a HEX number
+        /// </summary>
+        /// <param name="s"></param>
+        /// <returns>The hex value or ERROR_VAL</returns>
+        // ****************************************************************************************************************
         public Int64 ReadHex(string s)
         {
             s = s.ToUpper();
@@ -89,7 +135,15 @@ namespace Pasta80Symbols
             return v;
         }
 
-
+        // ****************************************************************************************************************
+        /// <summary>
+        ///     Make sure the label we have is valid
+        /// </summary>
+        /// <param name="label">Label to check</param>
+        /// <returns>
+        ///     TRUE for valid, FALSE for invalid
+        /// </returns>
+        // ****************************************************************************************************************
         public bool ValidateLabel(string label)
         {
             label = label.ToUpper();
@@ -103,29 +157,33 @@ namespace Pasta80Symbols
         }
 
 
-        // example lines:
-        //
-        //  math48.asm(564): warning[opkeyword]: Label collides with one of the operator keywords, try capitalizing it or other name: MOD
-        //  tetris.z80(80): warning[fwdref]: forward reference of symbol: if      __USE__MemAvail7
-        //  # file opened: system.asm
-        //  # file closed: helpers.lua
-        //  system.asm(250): warning[fake]: Fake instruction: ld de, hl
-        //
-        //   58+ 80CE AF           __int16_lt:     xor a
-        //   59+ 80CF ED 52                        sbc hl, de
-        //  7768 98EF CD 76 98                     call l2_set_pixel
-        //   60+ 80D1                              ; add hl, de
-        //   7790  9943              __USE__SetMemPage366:equ     0
-        //   7644  9835                              if      __USE__SetCpuSpeed362
-        //   7646  9835 ~__SetCpuSpeed362:                       ; Prologue
-        //   7647  9835 ~                           ld      hl,(display+2)
-        //   7609  9835 ~            ; var GetCpuSpeed(@RESULT)
-        //   7610  9835 ~__GetCpuSpeed360:                       ; Prologue
 
-        List<string> Ignore = new List<string>()
-        {
-            "P","I","R"
-        };
+        // ****************************************************************************************************************
+        /// <summary>
+        ///     Scan a single line of the .LST file, and pick out labels where we can
+        /// </summary>
+        /// <example>
+        ///     example lines:
+        /// 
+        ///     math48.asm(564): warning[opkeyword]: Label collides with one of the operator keywords, try capitalizing it or other name: MOD
+        ///     tetris.z80(80): warning[fwdref]: forward reference of symbol: if      __USE__MemAvail7
+        ///     # file opened: system.asm
+        ///     # file closed: helpers.lua
+        ///     system.asm(250): warning[fake]: Fake instruction: ld de, hl
+        /// 
+        ///     58+ 80CE AF           __int16_lt:     xor a
+        ///     59+ 80CF ED 52                        sbc hl, de
+        ///     7768 98EF CD 76 98                     call l2_set_pixel
+        ///     60+ 80D1                              ; add hl, de
+        ///     7790  9943              __USE__SetMemPage366:equ     0
+        ///     7644  9835                              if      __USE__SetCpuSpeed362
+        ///     7646  9835 ~__SetCpuSpeed362:                       ; Prologue
+        ///     7647  9835 ~                           ld      hl,(display+2)
+        ///     7609  9835 ~            ; var GetCpuSpeed(@RESULT)
+        ///     7610  9835 ~__GetCpuSpeed360:                       ; Prologue
+        /// </example>
+        /// <param name="line">Single line of text</param>
+        // ****************************************************************************************************************
         public void ScanLine(string line)
         {
             int index = 0;
@@ -230,15 +288,22 @@ namespace Pasta80Symbols
         }
 
 
-
+        // *************************************************************************************************************************************************
+        /// <summary>
+        ///     Load the Pasta/80 map file
+        /// </summary>
+        /// <param name="pBuffer"></param>
+        /// <returns>TRUE for okay, FALSE for error</returns>
+        // *************************************************************************************************************************************************
         public bool LoadPasta80File(string[] pBuffer)
         {
             foreach (string line in pBuffer)
             {
-                if (line.Contains("SetUpIRQsSys"))
+                // debug
+                /*if (line.Contains("SetUpIRQsSys"))
                 {
                     int ototo = 12;
-                }
+                }*/
                 ScanLine(line);
             }
             return true;
