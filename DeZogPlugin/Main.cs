@@ -39,7 +39,6 @@ namespace DeZogPlugin
             ProgramName = typeof(Main).Assembly.GetName().Name;
             ProgramName += " v" + version;
             string dzrpVersion = Commands.GetDzrpVersion();
-            Log.WriteLine("v{0} started. DZRP v{1}.", version, dzrpVersion);
 
             CSpect = _CSpect;
 
@@ -47,7 +46,8 @@ namespace DeZogPlugin
             Settings = Settings.Load();
             Log.Enabled = Settings.LogEnabled;
 
- 
+            Log.WriteLine("v{0} started. DZRP v{1}. Logging {2}. ", version, dzrpVersion, Log.Enabled? "enabled" : "disabled");
+
             //Server.Listen(Settings.Port);
             CSpectSocket.Port = Settings.Port;
             CSpectSocket.StartListening();
