@@ -9,7 +9,7 @@ DeZog will connect to this socket when a debug session is started.
 
 # Functionality
 
-The plugin supports DZRP v2.0.0. With the following functionality:
+The plugin supports DZRP v2.2.0. With the following functionality:
 - Continue/StepInto/StepOver/StepOut
 - Get memory content
 - Get register content

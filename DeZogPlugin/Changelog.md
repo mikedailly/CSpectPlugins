@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.4.0
+- Support for DZRP 2.2.0. Added DZRP commands:
+  - CMD_GET_SUPPORTED_COMMANDS
+  - CMD_WRITE_BANK_MEM/CMD_READ_BANK_MEM
+
 ## 2.3.0
 - Added DZRP commands:
   - CMD_INTERRUPT_ON_OFF
