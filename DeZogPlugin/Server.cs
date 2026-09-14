@@ -47,6 +47,10 @@ namespace DeZogPlugin
         // Supported commands
         CMD_GET_SUPPORTED_COMMANDS = 24,
 
+        // Banks
+        CMD_READ_BANK_MEM = 25,
+        CMD_WRITE_BANK_MEM = 26,
+
         // Misc
         CMD_ENABLE_BREAK_ON_INTERRUPT = 39,
 
@@ -413,6 +417,15 @@ namespace DeZogPlugin
 
                 case DZRP.CMD_GET_SUPPORTED_COMMANDS:   // 24
                     Commands.GetSupportedCommands();
+                    break;
+
+
+                case DZRP.CMD_READ_BANK_MEM: // 25
+                    Commands.ReadBankMem();
+                    break;
+
+                case DZRP.CMD_WRITE_BANK_MEM:    // 26
+                    Commands.WriteBankMem();
                     break;
 
 

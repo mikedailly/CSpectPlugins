@@ -1019,8 +1019,8 @@ namespace DeZogPlugin
          */
         public static void ReadMem()
         {
-            // bank plus 1
-            byte bankp1 = CSpectSocket.GetDataByte();
+            // Reserved byte
+            CSpectSocket.GetDataByte();
             // Start of memory
             ushort address = CSpectSocket.GetDataWord();
             // Get size
@@ -1037,17 +1037,8 @@ namespace DeZogPlugin
             InitData(size);
             var cspect = Main.CSpect;
             byte[] values;
-            if (bankp1 == 0)
-                // 64k memory area
-                values = cspect.Peek(address, size);
-            else
-            {
-                // Read from bank
-                int bank = bankp1 - 1;
-                int offs = address & 0x1FFF;
-                int physAddr = bank * 0x2000 + offs;
-                values = cspect.PeekPhysicalULA(physAddr, size);
-            }
+            // 64k memory area
+            values = cspect.Peek(address, size);
             foreach (byte value in values)
                 SetByte(value);
             CSpectSocket.SendResponse(Data);
@@ -1059,8 +1050,8 @@ namespace DeZogPlugin
          */
         public static void WriteMem()
         {
-            // bank plus 1
-            byte bankp1 = CSpectSocket.GetDataByte();
+            // Reserved byte
+            CSpectSocket.GetDataByte();
             // Start of memory
             ushort address = CSpectSocket.GetDataWord();
             // Get memory data
@@ -1069,17 +1060,67 @@ namespace DeZogPlugin
             // Write memory
             var cspect = Main.CSpect;
             byte[] values = data.ToArray();
-            if (bankp1 == 0)
-                // 64k memory area
-                cspect.Poke(address, values);
-            else
-            {
-                // Write to bank
-                int bank = bankp1 - 1;
-                int offs = address & 0x1FFF;
-                int physAddr = bank * 0x2000 + offs;
-                cspect.PokePhysicalULA(physAddr, values);
-            }
+            // 64k memory area
+            cspect.Poke(address, values);
+
+            // Respond
+            CSpectSocket.SendResponse();
+        }
+
+
+
+        /**
+         * Reads a bank area.
+         */
+        public static void ReadBankMem()
+        {
+            // bank
+            byte bank = CSpectSocket.GetDataByte();
+            // Start of memory
+            ushort address = CSpectSocket.GetDataWord();
+            // Get size
+            ushort size = CSpectSocket.GetDataWord();
+            // if (Log.Enabled)
+            // {
+            //     if(bankp1 == 0)
+            //         Log.WriteLine("ReadMem at address={0}, size={1}", address, size);
+            //     else
+            //         Log.WriteLine("ReadMem at offset={0}, size={1} from bank {2}", address, size, bankp1-1);
+            // }
+
+            // Respond
+            InitData(size);
+            var cspect = Main.CSpect;
+            byte[] values;
+            // Read from bank
+            int offs = address & 0x1FFF;
+            int physAddr = bank * 0x2000 + offs;
+            values = cspect.PeekPhysicalULA(physAddr, size);
+            foreach (byte value in values)
+                SetByte(value);
+            CSpectSocket.SendResponse(Data);
+        }
+
+
+        /**
+         * Writes a bank area.
+         */
+        public static void WriteBankMem()
+        {
+            // bank 
+            byte bank = CSpectSocket.GetDataByte();
+            // Start of memory
+            ushort address = CSpectSocket.GetDataWord();
+            // Get memory data
+            var data = CSpectSocket.GetRemainingData();
+
+            // Write memory
+            var cspect = Main.CSpect;
+            byte[] values = data.ToArray();
+            // Write to bank
+            int offs = address & 0x1FFF;
+            int physAddr = bank * 0x2000 + offs;
+            cspect.PokePhysicalULA(physAddr, values);
 
             // Respond
             CSpectSocket.SendResponse();
@@ -1341,7 +1382,7 @@ namespace DeZogPlugin
             SetByte(0b1101_1110);   // 0-7: CMD_INIT - CMD_PAUSE
             SetByte(0b0001_1111);   // 8-15: CMD_READ_MEM - CMD_SET_BORDER
             SetByte(0b1111_1111);   // 16-23: CMD_GET_SPRITES_PALETTE - CMD_INTERRUPT_ON_OFF
-            SetByte(0b0000_0000);   // 24-31: Nothing
+            SetByte(0b0000_0111);   // 24-31: CMD_GET_SUPPORTED_COMMANDS - CMD_WRITE_BANK_MEM
             SetByte(0b0000_0000);   // 32-39: Nothing
             SetByte(0b0000_0011);   // 40-47: CMD_ADD_BREAKPOINT - CMD_REMOVE_BREAKPOINT
 
@@ -1378,7 +1419,7 @@ namespace DeZogPlugin
         public static void GetSpritesPalette()
         {
             // Which palette
-            int paletteIndex = CSpectSocket.GetDataByte() & 0x01;
+            int paletteIndex = CSpectSocket.GetDataByte() & 0x01; ;
 
             // Prepare data
             InitData(2 * 256);
