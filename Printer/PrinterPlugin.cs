@@ -1,7 +1,7 @@
 ﻿// *****************************************************************************
 // CSpect Printer plugin.
 //
-// Echoes the Spectrum's printer output onto the console or into a text file.
+// Echoes the Spectrum's printer output onto the console, or into a text file.
 //
 // Written by: Jörg Pleumann (with assistance from Claude Code).
 //
@@ -17,16 +17,31 @@
 //
 // Command line:
 //   -printer            prints to the console.
-//   -printer=<file>     prints to <file>, which is started afresh on every run.
+//   -printer=<file>     prints to <file>, creating it or appending to it as
+//                       necessary. A relative path is taken from the directory
+//                       CSpect was started in - see ResolvePath().
 //
 // Output is UTF-8. The Spectrum's character set is ASCII apart from "pound"
 // and "copyright", plus the block graphics, all of which Unicode covers - see
-// Translate() below.
+// Translate() below. The user defined graphics are the one thing the two
+// destinations show differently, see PutUDG().
+//
+// Cursor left (8) and right (9) move the print position within the line, and a
+// later character overwrites whatever sits there. We stay within the line, the
+// way a real printer does, hence no support for cursor up and down.
+//
+// The two destinations reach that result by different means, on purpose. The
+// console gets every character as it is printed, with VT100 moves for the
+// cursor, so the line can be watched taking shape. A file gets nothing until
+// the line ends, and then the finished line in one piece, with the
+// overprinting already resolved - no escape sequence ever reaches it. Either
+// way the characters themselves are translated the same, see Translate().
 //
 // *****************************************************************************
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using Plugin;
 
 namespace Printer
@@ -90,6 +105,23 @@ namespace Printer
         /// </summary>
         public const int Char_PrintComma = 6;
 
+        /// <summary>Cursor control code - one position to the left.</summary>
+        public const int Char_CursorLeft = 8;
+
+        /// <summary>Cursor control code - one position to the right.</summary>
+        public const int Char_CursorRight = 9;
+
+        /// <summary>
+        ///     Width of a print field - what a comma moves on to. The Spectrum
+        ///     fits two of these into its 32 column printer line.
+        /// </summary>
+        public const int FieldWidth = 16;
+
+        /// <summary>
+        ///     The character that starts a VT100 escape sequence.
+        /// </summary>
+        public const char Escape = (char)27;
+
         /// <summary>First control code taking parameter bytes (INK).</summary>
         public const int Char_FirstWithParameters = 16;
 
@@ -126,10 +158,10 @@ namespace Printer
         public const int Char_LastUDG = 164;
 
         /// <summary>
-        ///     What we print for a user defined graphic. Unicode's circled
-        ///     capitals start here, so the UDGs "A" to "U" come out as fancy
+        ///     What we print for a user defined graphic in a file. Unicode's
+        ///     circled capitals start here, so the UDGs "A" to "U" come out as
         ///     circled letters - that way the output still says which UDG was
-        ///     printed, even though the actual bits are lost.
+        ///     printed, even though the actual bits are lost. See PutUDG().
         /// </summary>
         const char UDG_A_Glyph = '\u24b6';
 
@@ -150,26 +182,33 @@ namespace Printer
               ".scl", ".mmc", ".img", ".vhd", ".csw", ".rzx"
             };
 
-        /// <summary>Where our output goes - the console, or a file.</summary>
-        TextWriter Output;
-
         /// <summary>
-        ///     Are we writing to a file we opened ourselves (and therefore have
-        ///     to close)?
+        ///     The file we print to, or null when we print to the console. This
+        ///     is what tells the two apart throughout.
         /// </summary>
-        bool OutputIsFile = false;
-
-        /// <summary>
-        ///     The character that ended the last line (13 or 10), or 0 - used
-        ///     for folding CR/LF pairs.
-        /// </summary>
-        int LastNewLineChar = 0;
+        TextWriter LogFile;
 
         /// <summary>
         ///     How many parameter bytes of a control code are still to come?
         ///     Those aren't characters and must not be printed.
         /// </summary>
         int ParametersToSwallow = 0;
+
+        /// <summary>
+        ///     The line being printed to a file. It only goes out once it is
+        ///     finished, so that a program moving the print position about
+        ///     within the line still ends up with the right result. Printing to
+        ///     the console needs none of this and leaves it empty.
+        /// </summary>
+        StringBuilder Line = new StringBuilder();
+
+        /// <summary>
+        ///     Where in the line the next character goes. Needed either way -
+        ///     to place the character when printing to a file, and to work out
+        ///     the cursor moves when printing to the console. It can sit behind
+        ///     the end of the line after a cursor move to the right.
+        /// </summary>
+        int Column = 0;
 
         public iCSpect CSpect;
 
@@ -203,12 +242,16 @@ namespace Printer
         // *********************************************************************
         public void Quit()
         {
-            if (!OutputIsFile || Output == null) return;
+            // A line the program never finished would otherwise be lost. When
+            // printing to the console there is no line to look at, so the
+            // print position is what tells us one was started.
+            if (Line.Length > 0 || Column > 0) FlushLine();
 
-            Output.Flush();
-            Output.Dispose();
-            Output = null;
-            OutputIsFile = false;
+            if (LogFile == null) return;
+
+            LogFile.Flush();
+            LogFile.Dispose();
+            LogFile = null;
         }
 
         // *********************************************************************
@@ -218,8 +261,9 @@ namespace Printer
         // *********************************************************************
         public void Reset()
         {
-            LastNewLineChar = 0;
             ParametersToSwallow = 0;
+            Line.Length = 0;
+            Column = 0;
         }
 
         // *********************************************************************
@@ -314,7 +358,8 @@ namespace Printer
             string path = GetOptionValue(CommandLineOption, true);
             if (path == null) return false;
 
-            return OpenOutput(path);
+            OpenLogFile(path);
+            return true;
         }
 
         // *********************************************************************
@@ -371,55 +416,87 @@ namespace Printer
 
         // *********************************************************************
         /// <summary>
-        ///     Set up where our output goes.
+        ///     Open the file we log to on top of the console, if one was asked
+        ///     for at all. The console always gets the output, so whatever goes
+        ///     wrong in here costs us the file, never the plugin.
         /// </summary>
         /// <param name="_path">
-        ///     The file to print to, or "" for the console.
+        ///     The file to log to, or "" for the console alone.
+        /// </param>
+        // *********************************************************************
+        void OpenLogFile(string _path)
+        {
+            string path = _path.Length > 0 ? ResolvePath(_path) : "";
+
+            if (path.Length > 0)
+            {
+                // CSpect takes the file to load as a bare command line
+                // argument, so "-printer game.nex" is all too easy to type -
+                // and printer output appended to a .nex ruins it just as
+                // thoroughly as overwriting would. Don't.
+                string extension = Path.GetExtension(path).ToLowerInvariant();
+
+                if (Array.IndexOf(ProtectedExtensions, extension) >= 0)
+                {
+                    Console.WriteLine(" Printer - \"" + _path + "\" looks like a file CSpect loads, not printing over it");
+                }
+                else
+                {
+                    try
+                    {
+                        // Create new file or append to existing file.
+                        StreamWriter writer = new StreamWriter(path, true);
+
+                        // CSpect may well never get around to calling Quit(),
+                        // so don't sit on buffered output.
+                        writer.AutoFlush = true;
+
+                        LogFile = writer;
+                    }
+                    catch (Exception e)
+                    {
+                        Console.WriteLine(" Printer - can't write to \"" + _path + "\": " + e.Message);
+                    }
+                }
+            }
+
+            if (LogFile == null)
+            {
+                Console.WriteLine(" Printer added");
+            }
+            else
+            {
+                Console.WriteLine(" Printer added (" + Path.GetFullPath(path) + ")");
+            }
+        }
+
+        // *********************************************************************
+        /// <summary>
+        ///     Make sense of a relative path. CSpect moves its own working
+        ///     directory to where it keeps its files, so by the time a plugin
+        ///     runs, a relative path would no longer mean what the user typed
+        ///     it to mean. Shells export the directory they were in as PWD, and
+        ///     a program changing its working directory does not touch that, so
+        ///     it still names where the command was given.
+        /// </summary>
+        /// <param name="_path">
+        ///     The path as it came off the command line.
         /// </param>
         /// <returns>
-        ///     TRUE when we should be active, FALSE when we can't open the
-        ///     file.
+        ///     An absolute path, or the original one when there is no PWD to go
+        ///     by - as happens on Windows, or when CSpect wasn't started from a
+        ///     shell at all.
         /// </returns>
         // *********************************************************************
-        bool OpenOutput(string _path)
+        string ResolvePath(string _path)
         {
-            if (_path.Length == 0)
-            {
-                Output = Console.Out;
-                OutputIsFile = false;
-                Console.WriteLine(" Printer added - printing to the console");
-                return true;
-            }
+            if (Path.IsPathRooted(_path)) return _path;
 
-            // CSpect takes the file to load as a bare command line argument, so
-            // "-printer game.nex" is all too easy to type - and as we start our
-            // file afresh, we'd wipe it out. Don't.
-            string extension = Path.GetExtension(_path).ToLowerInvariant();
-            if (Array.IndexOf(ProtectedExtensions, extension) >= 0)
-            {
-                Console.WriteLine(" Printer - \"" + _path + "\" looks like a file CSpect loads, not printing over it");
-                return OpenOutput("");
-            }
+            string shellDirectory = Environment.GetEnvironmentVariable("PWD");
+            if (string.IsNullOrEmpty(shellDirectory)) return _path;
+            if (!Path.IsPathRooted(shellDirectory)) return _path;
 
-            try
-            {
-                // Started afresh on every run - hence append: false.
-                StreamWriter writer = new StreamWriter(_path, false);
-
-                // CSpect may well never get around to calling Quit(), so don't
-                // sit on buffered output.
-                writer.AutoFlush = true;
-
-                Output = writer;
-                OutputIsFile = true;
-                Console.WriteLine(" Printer added - printing to \"" + Path.GetFullPath(_path) + "\"");
-                return true;
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine(" Printer not added - can't write to \"" + _path + "\": " + e.Message);
-                return false;
-            }
+            return Path.Combine(shellDirectory, _path);
         }
 
         // *********************************************************************
@@ -488,29 +565,155 @@ namespace Printer
                 return;
             }
 
-            if (c == 13 || c == 10)
+            // The Spectrum ends a line with a single 13. There is no CR/LF pair
+            // to fold here - 10 is a cursor code of its own, not a line feed.
+            if (c == 13)
             {
-                // The Spectrum ends a line with a single 13 - fold a CR/LF pair
-                // into one newline, so we don't end up with a blank line
-                // between every two lines of output.
-                if (LastNewLineChar != 0 && c != LastNewLineChar)
-                {
-                    LastNewLineChar = 0;
-                    return;
-                }
-
-                Output.WriteLine();
-                LastNewLineChar = c;
+                FlushLine();
                 return;
             }
 
-            LastNewLineChar = 0;
+            // The print position moves within the line, the way a real printer
+            // does. Nothing is written yet - a character put down later simply
+            // overwrites whatever sits at that position.
+            if (c == Char_CursorLeft)
+            {
+                if (Column > 0)
+                {
+                    Column--;
+                    MoveConsole(1, 'D');
+                }
+                return;
+            }
+
+            if (c == Char_CursorRight)
+            {
+                Column++;
+                MoveConsole(1, 'C');
+                return;
+            }
+
+            // A comma moves on to the next field. TAB is meant to name a column
+            // outright, but its two parameter bytes are swallowed below, so the
+            // best we can do is treat it the same way.
+            if (c == Char_PrintComma || c == Char_Tab)
+            {
+                ParametersToSwallow = ParameterCount(c);
+
+                int field = ((Column / FieldWidth) + 1) * FieldWidth;
+                MoveConsole(field - Column, 'C');
+                Column = field;
+                return;
+            }
+
             ParametersToSwallow = ParameterCount(c);
+
+            // A user defined graphic has no character of its own, and the two
+            // destinations make the best of that in different ways.
+            if (c >= Char_FirstUDG && c <= Char_LastUDG)
+            {
+                PutUDG(c - Char_FirstUDG);
+                return;
+            }
 
             char translated = Translate(c);
             if (translated == 0) return;
 
-            Output.Write(translated);
+            Put(translated);
+        }
+
+        // *********************************************************************
+        /// <summary>
+        ///     Print a user defined graphic. We can't show the shape a program
+        ///     gave it, so both destinations settle for naming which of the 21
+        ///     it was - a file with a circled capital, which needs a font that
+        ///     has those, and the console with a plain capital shown inverse.
+        ///     Inverse costs exactly one cell, where a circled capital is wider
+        ///     than one in many terminal fonts and ends up overlapping.
+        /// </summary>
+        /// <param name="_index">
+        ///     Which UDG, 0 for "A" through 20 for "U".
+        /// </param>
+        // *********************************************************************
+        void PutUDG(int _index)
+        {
+            if (LogFile != null)
+            {
+                Put((char)(UDG_A_Glyph + _index));
+                return;
+            }
+
+            // Switched off again right away, so nothing stays inverse should a
+            // program stop in the middle of a line.
+            Console.Write(Escape.ToString() + "[7m");
+            Put((char)('A' + _index));
+            Console.Write(Escape.ToString() + "[27m");
+        }
+
+        // *********************************************************************
+        /// <summary>
+        ///     Put a character down at the current print position. Printing to
+        ///     a file collects it in the line, growing that as needed and
+        ///     padding with spaces where cursor right has left a gap. Printing
+        ///     to the console hands it straight over instead, the cursor having
+        ///     been moved there already.
+        /// </summary>
+        /// <param name="_c">The character to put down.</param>
+        // *********************************************************************
+        void Put(char _c)
+        {
+            if (LogFile != null)
+            {
+                while (Line.Length < Column) Line.Append(' ');
+
+                if (Column < Line.Length) Line[Column] = _c;
+                else Line.Append(_c);
+            }
+            else
+            {
+                Console.Write(_c);
+            }
+
+            // Both ways of printing need this - the file to know where in the
+            // line the next character goes, the console to work out its moves.
+            Column++;
+        }
+
+        // *********************************************************************
+        /// <summary>
+        ///     Move the console's cursor along with our print position, so the
+        ///     line can be watched taking shape, overprinting and all. This is
+        ///     for the console alone - escape sequences have no business in a
+        ///     text file, which is why printing to a file collects the finished
+        ///     line instead.
+        /// </summary>
+        /// <param name="_by">
+        ///     How far to move, ignored when not positive.
+        /// </param>
+        /// <param name="_direction">"C" for right, "D" for left.</param>
+        // *********************************************************************
+        void MoveConsole(int _by, char _direction)
+        {
+            if (LogFile != null || _by <= 0) return;
+
+            Console.Write(Escape.ToString() + "[" + _by + _direction);
+        }
+
+        // *********************************************************************
+        /// <summary>
+        ///     The line is finished. A file gets it in one piece, with the
+        ///     overprinting already resolved into the characters that ended up
+        ///     on the paper. The console has been watching it take shape all
+        ///     along and only needs the line break.
+        /// </summary>
+        // *********************************************************************
+        void FlushLine()
+        {
+            if (LogFile != null) LogFile.WriteLine(Line.ToString());
+            else Console.WriteLine();
+
+            Line.Length = 0;
+            Column = 0;
         }
 
         // *********************************************************************
@@ -545,12 +748,6 @@ namespace Printer
         // *********************************************************************
         char Translate(int _c)
         {
-            // A comma in LPRINT moves to the next field and TAB to a given
-            // column. A tab is only a rough stand-in for either - we've no idea
-            // how wide the receiving end thinks a field is - but it keeps
-            // columns as columns instead of running the output together.
-            if (_c == Char_PrintComma || _c == Char_Tab) return '\t';
-
             // The pound sign.
             if (_c == Char_Pound) return '\u00a3';
 
@@ -563,16 +760,12 @@ namespace Printer
             // The block graphics chars.
             if (_c >= Char_FirstBlock && _c <= Char_LastBlock) return BlockGraphics[_c - Char_FirstBlock];
 
-            // We cannot print a UDG's bits to the console or a text file, so
-            // the best we can do is print a circled capital letter to show
-            // which of the 21 UDGs is meant.
-            if (_c >= Char_FirstUDG && _c <= Char_LastUDG) return (char)(UDG_A_Glyph + (_c - Char_FirstUDG));
-
             // Everything else we drop. Control codes below 32 would only
-            // garble the output, and the keyword tokens (165-255) never need
-            // handling here - the ROM expands those into single characters and
-            // sends them through this very routine again, so we see the spelled
-            // out keyword anyway.
+            // garble the output, the user defined graphics (144-164) are dealt
+            // with in PutUDG() because they differ per destination, and the
+            // keyword tokens (165-255) never need handling here - the ROM
+            // expands those into single characters and sends them through this
+            // very routine again, so we see the spelled out keyword anyway.
             return (char)0;
         }
     }
