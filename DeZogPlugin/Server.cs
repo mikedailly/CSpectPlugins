@@ -23,11 +23,11 @@ namespace DeZogPlugin
         CMD_WRITE_BANK = 5, // TODO: Deprecated: remove with next release
         CMD_CONTINUE = 6,
         CMD_PAUSE = 7,
-        CMD_READ_MEM = 8,
+        CMD_READ_MEM = 8, // TODO: Deprecated: remove with next release
         CMD_WRITE_MEM = 9,
         CMD_SET_SLOT = 10,
-        CMD_GET_TBBLUE_REG = 11,
-        CMD_SET_BORDER = 12,
+        CMD_GET_NEXTREG = 11,
+        CMD_SET_BORDER = 12, // TODO: Deprecated: remove with next release
         CMD_SET_BREAKPOINTS = 13,
         CMD_RESTORE_MEM = 14,
         CMD_LOOPBACK = 15,
@@ -52,6 +52,8 @@ namespace DeZogPlugin
         CMD_WRITE_BANK_MEM = 26,
 
         // Misc
+        CMD_SET_NEXTREGS = 27,
+        CMD_READ_MEM_BLOCKS = 28,
         CMD_ENABLE_BREAK_ON_INTERRUPT = 39,
 
         // Breakpoint
@@ -372,8 +374,8 @@ namespace DeZogPlugin
                     Commands.SetSlot();
                     break;
 
-                case DZRP.CMD_GET_TBBLUE_REG:   // 11
-                    Commands.GetTbblueReg();
+                case DZRP.CMD_GET_NEXTREG:   // 11
+                    Commands.GetNextreg();
                     break;
 
                 case DZRP.CMD_SET_BORDER:   // 12
@@ -428,6 +430,14 @@ namespace DeZogPlugin
                     Commands.WriteBankMem();
                     break;
 
+
+                case DZRP.CMD_SET_NEXTREGS:    // 27
+                    Commands.SetNextregs();
+                    break;
+
+                case DZRP.CMD_READ_MEM_BLOCKS:    // 28
+                    Commands.ReadMemBlocks();
+                    break;
 
                 case DZRP.CMD_ADD_BREAKPOINT:   // 40
                     Commands.AddBreakpoint();

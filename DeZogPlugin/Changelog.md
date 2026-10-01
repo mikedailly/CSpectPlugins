@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.4.1
+- Added CMD_READ_MEM_BLOCKS and CMD_SET_NEXTREGS
+
 ## 2.4.0
 - Support for DZRP 2.2.0. Added DZRP commands:
   - CMD_GET_SUPPORTED_COMMANDS
