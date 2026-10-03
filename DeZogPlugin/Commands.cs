@@ -1107,7 +1107,7 @@ namespace DeZogPlugin
          */
         public static void WriteBankMem()
         {
-            // bank 
+            // bank
             byte bank = CSpectSocket.GetDataByte();
             // Start of memory
             ushort address = CSpectSocket.GetDataWord();
@@ -1248,6 +1248,8 @@ namespace DeZogPlugin
             // Prepare data for the response message
             InitData(9);
 
+            // Skip 'context' value (not used at the moment)
+            CSpectSocket.GetDataByte();
             // Get object code
             var code = CSpectSocket.GetRemainingData();
             // Check state
@@ -1297,7 +1299,7 @@ namespace DeZogPlugin
             cspect.Poke((ushort)(EXEC_ASM_START_ADDR + 3), 0x00); // NOP
 
             // Overwrite memory with object code
-            byte[] codeBytes = code.ToArray();
+            byte[] codeBytes = code.ToArray(); // TODO: FIX: First byte is context (0).
             cspect.Poke(callAddress, codeBytes);
             // End with RET (0xC9)
             ushort retAddress = (ushort)(callAddress + code.Count);
@@ -1380,9 +1382,9 @@ namespace DeZogPlugin
             // No error
             InitData(6);
             SetByte(0b1101_1110);   // 0-7: CMD_INIT - CMD_PAUSE
-            SetByte(0b0001_1111);   // 8-15: CMD_READ_MEM - CMD_SET_BORDER
+            SetByte(0b0000_1110);   // 8-15: CMD_WRITE_MEM - CMD_GET_NEXTREG
             SetByte(0b1111_1111);   // 16-23: CMD_GET_SPRITES_PALETTE - CMD_INTERRUPT_ON_OFF
-            SetByte(0b0000_0111);   // 24-31: CMD_GET_SUPPORTED_COMMANDS - CMD_WRITE_BANK_MEM
+            SetByte(0b0001_1111);   // 24-31: CMD_GET_SUPPORTED_COMMANDS - CMD_READ_MEM_BLOCKS
             SetByte(0b0000_0000);   // 32-39: Nothing
             SetByte(0b0000_0011);   // 40-47: CMD_ADD_BREAKPOINT - CMD_REMOVE_BREAKPOINT
 
@@ -1392,9 +1394,9 @@ namespace DeZogPlugin
 
 
         /**
-         * Returns the value of one TBBlue register.
+         * Returns the value of one Next registers.
          */
-        public static void GetTbblueReg()
+        public static void GetNextreg()
         {
             // Get register
             byte reg = CSpectSocket.GetDataByte();
@@ -1410,6 +1412,64 @@ namespace DeZogPlugin
                 Log.WriteLine("GetNextRegister({0:X2}): {1}", reg, value);
             // Respond
             CSpectSocket.SendResponse(Data);
+        }
+
+
+        /**
+         * Sets nextregs registers.
+         * A list of registers with values is received and set
+         */
+        public static void SetNextregs()
+        {
+            // Get registers and values
+            var regValues = CSpectSocket.GetRemainingData();
+            int count = regValues.Count;
+
+            // Set all registers
+            var cspect = Main.CSpect;
+            for (int i = 0; i < count; i += 2)
+            {
+                byte reg = regValues[i];
+                byte val = regValues[i + 1];
+                cspect.SetNextRegister(reg, val);
+            }
+
+            // Respond
+            CSpectSocket.SendResponse();
+        }
+
+
+        /**
+         * Reads a few blocks of memory (64k area).
+         */
+        public static void ReadMemBlocks()
+        {
+            // Skip response length (4 bytes)
+            CSpectSocket.GetDataWord();
+            CSpectSocket.GetDataWord();
+            // Get memory block count
+            var addrSizes = CSpectSocket.GetRemainingData();
+            int count = CSpectSocket.GetRemainingDataCount() / 4;  // 2 byte address + 2 byte size
+
+            // Loop all blocks
+            var cspect = Main.CSpect;
+            var data = new List<byte>();
+            for (int i = 0; i < count; i++)
+            {
+                // Start of memory
+                ushort address = CSpectSocket.GetDataWord();
+                // Get size
+                ushort size = CSpectSocket.GetDataWord();
+                var values = cspect.Peek(address, size);
+                data.AddRange(values);
+                //Log.WriteLine("ReadMem, block={0}, size={1}", address, size);
+            }
+
+            // Respond
+            int len = data.Count;
+            InitData(len);
+            // Write all data
+            CSpectSocket.SendResponse(data.ToArray());
         }
 
 
