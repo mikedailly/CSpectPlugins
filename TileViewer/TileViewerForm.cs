@@ -45,8 +45,10 @@ namespace TileViewer
             tiles = new TileCanvas { Dock = DockStyle.Fill };
             map = new MapCanvas { Dock = DockStyle.Fill };
             tiles.MouseMove += ShowTileDetails;
+            tiles.ZoomChanged += ShowTileDetails;
             tiles.MouseDown += PickTileBrush;
             map.MouseMove += ShowMapDetails;
+            map.ZoomChanged += ShowMapDetails;
             map.MouseDown += BeginMapEdit;
             map.MouseMove += ContinueMapEdit;
             map.MouseUp += delegate { painting = false; lastPaintCell = -1; map.Capture = false; };
@@ -164,8 +166,9 @@ namespace TileViewer
         {
             if (frame == null) return -1;
             int x = point.X - map.AutoScrollPosition.X, y = point.Y - map.AutoScrollPosition.Y;
-            if (x < 0 || y < 0 || x >= frame.Columns * 16 || y >= 32 * 16) return -1;
-            return y / 16 * frame.Columns + x / 16;
+            int cellSize = map.CellSize;
+            if (x < 0 || y < 0 || x >= frame.Columns * cellSize || y >= 32 * cellSize) return -1;
+            return y / cellSize * frame.Columns + x / cellSize;
         }
 
         private void BeginMapEdit(object sender, MouseEventArgs e)
@@ -315,6 +318,21 @@ namespace TileViewer
             {
                 if (native.Id == 0x12) return;
                 if (!PeekMessage(out native, window, 0, 0, 1)) break;
+                // Wheel messages target the focused control. Zoom the view under the
+                // pointer even when a toolbar control still has keyboard focus.
+                if (native.Id == 0x20a)
+                {
+                    long coordinates = native.LParam.ToInt64();
+                    Point screen = new Point((short)coordinates, (short)(coordinates >> 16));
+                    ViewerCanvas canvas = tabs.SelectedIndex == 0 ? (ViewerCanvas)tiles : map;
+                    Point point = canvas.PointToClient(screen);
+                    if (canvas.ClientRectangle.Contains(point))
+                    {
+                        int delta = (short)(native.WParam.ToInt64() >> 16);
+                        canvas.ZoomAt(new MouseEventArgs(MouseButtons.None, 0, point.X, point.Y, delta));
+                        continue;
+                    }
+                }
                 Message managed = Message.Create(native.Window, (int)native.Id, native.WParam, native.LParam);
                 Control target = Control.FromChildHandle(native.Window);
                 bool handled = native.Id >= 0x100 && native.Id <= 0x109 && target != null &&
@@ -345,14 +363,45 @@ namespace TileViewer
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr DispatchMessage(ref NativeMessage message);
 
-        private class ViewerCanvas : Panel
+        private abstract class ViewerCanvas : Panel
         {
-            internal ViewerCanvas()
+            private int wheelRemainder;
+            protected int Zoom { get; private set; }
+            protected abstract int UnitSize { get; }
+            protected abstract void UpdateExtent();
+            internal event MouseEventHandler ZoomChanged;
+
+            protected ViewerCanvas(int initialZoom)
             {
+                Zoom = initialZoom;
                 DoubleBuffered = true;
                 AutoScroll = true;
                 BackColor = Color.White;
                 ResizeRedraw = true;
+            }
+
+            internal void ZoomAt(MouseEventArgs e)
+            {
+                wheelRemainder += e.Delta;
+                int steps = wheelRemainder / 120;
+                wheelRemainder %= 120;
+                int next = Math.Max(1, Math.Min(8, Zoom + steps));
+                if (next == Zoom) return;
+                double x = (e.X - AutoScrollPosition.X) / (double)UnitSize;
+                double y = (e.Y - AutoScrollPosition.Y) / (double)UnitSize;
+                Zoom = next;
+                UpdateExtent();
+                AutoScrollPosition = new Point(Math.Max(0, (int)Math.Round(x * UnitSize) - e.X),
+                    Math.Max(0, (int)Math.Round(y * UnitSize) - e.Y));
+                Invalidate();
+                if (ZoomChanged != null) ZoomChanged(this, e);
+            }
+
+            protected override void OnMouseWheel(MouseEventArgs e)
+            {
+                var handled = e as HandledMouseEventArgs;
+                if (handled != null) handled.Handled = true;
+                ZoomAt(e);
             }
 
             protected static Bitmap CreateBitmap(int width, int height, int[] pixels)
@@ -382,15 +431,21 @@ namespace TileViewer
 
         private sealed class TileCanvas : ViewerCanvas
         {
-            private const int Columns = 16, CellSize = 40;
+            private const int Columns = 16;
             private readonly List<Bitmap> images = new List<Bitmap>();
+            private int CellSize { get { return 8 * Zoom + 8; } }
+            protected override int UnitSize { get { return CellSize; } }
+            internal TileCanvas() : base(4) { }
+
+            protected override void UpdateExtent()
+            { AutoScrollMinSize = images.Count == 0 ? Size.Empty : new Size(Columns * CellSize, images.Count / Columns * CellSize); }
 
             internal void UpdateFrame(TileSnapshot snapshot, int count, int offset, uint[] colours, byte[] definitions)
             {
                 ClearImages();
                 for (int tile = 0; tile < count; tile++)
                     images.Add(CreateBitmap(8, 8, snapshot.TilePixels(new TileEntry(tile, 0, offset), colours, definitions)));
-                AutoScrollMinSize = new Size(Columns * CellSize, count / Columns * CellSize);
+                UpdateExtent();
                 Invalidate();
             }
 
@@ -411,7 +466,7 @@ namespace TileViewer
                     int x = (i % Columns) * CellSize + AutoScrollPosition.X;
                     int y = (i / Columns) * CellSize + AutoScrollPosition.Y;
                     if (y + CellSize < e.ClipRectangle.Top || y > e.ClipRectangle.Bottom) continue;
-                    var area = new Rectangle(x + 4, y + 4, 32, 32);
+                    var area = new Rectangle(x + 4, y + 4, 8 * Zoom, 8 * Zoom);
                     Checkerboard(e.Graphics, area);
                     e.Graphics.DrawImage(images[i], area);
                 }
@@ -425,6 +480,11 @@ namespace TileViewer
         {
             private Bitmap image;
             private bool dirty = true;
+            internal int CellSize { get { return 8 * Zoom; } }
+            protected override int UnitSize { get { return CellSize; } }
+            internal MapCanvas() : base(2) { }
+            protected override void UpdateExtent()
+            { AutoScrollMinSize = image == null ? Size.Empty : new Size(image.Width * Zoom, image.Height * Zoom); }
             internal void MarkDirty() { dirty = true; }
 
             internal void UpdateFrame(TileSnapshot snapshot)
@@ -432,7 +492,7 @@ namespace TileViewer
                 if (!dirty) return;
                 if (image != null) image.Dispose();
                 image = CreateBitmap(snapshot.Columns * 8, 256, snapshot.MapPixels());
-                AutoScrollMinSize = new Size(image.Width * 2, image.Height * 2);
+                UpdateExtent();
                 dirty = false;
                 Invalidate();
             }
@@ -443,7 +503,7 @@ namespace TileViewer
                 if (image == null) return;
                 Checkerboard(e.Graphics, e.ClipRectangle);
                 PixelDrawing(e.Graphics);
-                e.Graphics.DrawImage(image, AutoScrollPosition.X, AutoScrollPosition.Y, image.Width * 2, image.Height * 2);
+                e.Graphics.DrawImage(image, AutoScrollPosition.X, AutoScrollPosition.Y, image.Width * Zoom, image.Height * Zoom);
             }
 
             protected override void Dispose(bool disposing) { if (disposing && image != null) image.Dispose(); base.Dispose(disposing); }

@@ -29,6 +29,7 @@ namespace TileViewer
                 TestTextAndChanges();
                 TestMapEditing();
                 TestEditingWindow(args[0]);
+                TestZooming(args[0]);
                 TestHostKeyboardQueue();
                 TestWindow(args[0]);
                 Console.WriteLine("PASS: " + checks + " checks (capture, banking, decoding, live updates, and window lifecycle).");
@@ -447,6 +448,99 @@ namespace TileViewer
                 Check(fake.WriteAddresses.Count == writes, "clicking outside the map does not write");
                 using (var bitmap = new Bitmap(form.Width, form.Height))
                 { form.DrawToBitmap(bitmap, new Rectangle(0, 0, form.Width, form.Height)); bitmap.Save(System.IO.Path.Combine(outputDirectory, "tilemap-editor.png"), ImageFormat.Png); }
+            }
+            finally { plugin.Quit(); }
+        }
+
+        private static void TestZooming(string outputDirectory)
+        {
+            var fake = new Emulator();
+            fake.Registers[0x6b] = 0xc2; fake.Registers[0x6e] = 0x20;
+            fake.DebuggerState = 1;
+            for (int i = 0; i < 32; i++) fake.Bank5[341 * 32 + i] = 0x11;
+            fake.Palette[0x61] = 0x1c0;
+            var plugin = new TileViewerPlugin();
+            plugin.Init(fake.Api); plugin.KeyPressed(0); plugin.OSTick();
+            try
+            {
+                var form = Application.OpenForms.OfType<TileViewerForm>().Single();
+                var tabs = form.Controls.OfType<TabControl>().Single();
+                Panel tiles = tabs.TabPages[0].Controls.OfType<Panel>().Single(p => !(p is FlowLayoutPanel));
+                Panel map = tabs.TabPages[1].Controls.OfType<Panel>().Single(p => !(p is FlowLayoutPanel));
+                Action<Panel, int, Point> wheel = (canvas, delta, point) => canvas.GetType().GetMethod("OnMouseWheel", BindingFlags.Instance | BindingFlags.NonPublic)
+                    .Invoke(canvas, new object[] { new HandledMouseEventArgs(MouseButtons.None, 0, point.X, point.Y, delta) });
+                Func<Point, int> tileAt = point => (int)tiles.GetType().GetMethod("TileAt", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(tiles, new object[] { point });
+                Func<Point, int> cellAt = point => (int)typeof(TileViewerForm).GetMethod("MapCellAt", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(form, new object[] { point });
+                Point anchor = new Point(180, 150);
+                int tileBefore = tileAt(anchor);
+                wheel(tiles, 60, anchor);
+                Check(tiles.AutoScrollMinSize == new Size(640, 640), "partial wheel movement accumulates before zooming");
+                wheel(tiles, 60, anchor);
+                Check(tiles.AutoScrollMinSize == new Size(768, 768) && tileAt(anchor) == tileBefore, "tile zoom keeps sixteen columns and anchors the hovered tile");
+                Check(form.Controls.OfType<Label>().Any(l => l.Text.Contains("Tile " + tileBefore + " (")), "tile zoom refreshes hover details");
+                tabs.SelectedIndex = 1;
+                Check(map.AutoScrollMinSize == new Size(1280, 512), "map retains its own initial zoom");
+                int cellBefore = cellAt(anchor);
+                wheel(map, 120, anchor);
+                Check(map.AutoScrollMinSize == new Size(1920, 768) && cellAt(anchor) == cellBefore, "map zoom anchors the hovered cell");
+                map.AutoScrollPosition = new Point(500, 130);
+                cellBefore = cellAt(anchor);
+                wheel(map, 120, anchor);
+                Check(cellAt(anchor) == cellBefore && map.AutoScrollMinSize == new Size(2560, 1024), "map zoom keeps the cursor anchored after scrolling");
+                var controls = tabs.TabPages[1].Controls.OfType<FlowLayoutPanel>().Single();
+                NumericUpDown brush = controls.Controls.OfType<NumericUpDown>().Single(c => c.Name == "BrushTile");
+                NumericUpDown palette = controls.Controls.OfType<NumericUpDown>().Single(c => c.Name == "BrushPalette");
+                brush.Value = 341; palette.Value = 6;
+                Action<string, MouseEventArgs> mouse = (name, e) => map.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic).Invoke(map, new object[] { e });
+                var click = new MouseEventArgs(MouseButtons.Left, 1, anchor.X, anchor.Y, 0);
+                mouse("OnMouseDown", click); mouse("OnMouseUp", click); plugin.OSTick();
+                int address = 0x2000 + cellBefore * 2;
+                Check(fake.Bank5[address] == 0x55 && fake.Bank5[address + 1] == 0x61, "painting after zoom and scrolling writes the hovered map cell");
+                brush.Value = 0; palette.Value = 0;
+                mouse("OnMouseDown", new MouseEventArgs(MouseButtons.Middle, 1, anchor.X, anchor.Y, 0));
+                Check(brush.Value == 341 && palette.Value == 6, "picking after zoom and scrolling samples the hovered map cell");
+                Check(form.Controls.OfType<Label>().Any(l => l.Text.Contains("Cell " + (cellBefore % 80) + "," + (cellBefore / 80)) && l.Text.Contains("tile 341")), "map hover follows scaled cell coordinates");
+                Point screen = map.PointToScreen(anchor);
+                palette.Focus();
+                Check(PostMessage(palette.Handle, 0x20a, new IntPtr(120 << 16), new IntPtr((screen.X & 0xffff) | (screen.Y << 16))), "queue wheel over map while toolbar has focus");
+                plugin.OSTick();
+                Check(map.AutoScrollMinSize == new Size(3200, 1280) && palette.Value == 6, "wheel over map zooms without changing a focused toolbar value");
+                wheel(map, 120 * 30, anchor);
+                Check(map.AutoScrollMinSize == new Size(5120, 2048), "map zoom is bounded at eight times");
+                Point scrollAtLimit = map.AutoScrollPosition;
+                wheel(map, 120, anchor);
+                Check(map.AutoScrollPosition == scrollAtLimit, "wheel at zoom limit does not unexpectedly scroll");
+                wheel(map, -120 * 30, anchor);
+                Check(map.AutoScrollMinSize == new Size(640, 256) && cellAt(new Point(641, 4)) == -1, "map zoom is bounded at native size and excludes outside cells");
+                tabs.SelectedIndex = 0;
+                Check(tiles.AutoScrollMinSize == new Size(768, 768), "changing tabs preserves independent zoom levels");
+                wheel(tiles, 120 * 30, anchor);
+                Check(tiles.AutoScrollMinSize == new Size(1152, 1152), "tile zoom is bounded at eight times");
+                wheel(tiles, -120 * 30, anchor);
+                Check(tiles.AutoScrollMinSize == new Size(256, 256) && tileAt(new Point(244, 20)) == 31, "native-size tile grid retains sixteen-column hit testing");
+                wheel(tiles, 120 * 3, new Point(4, 4));
+                var count = tabs.TabPages[0].Controls.OfType<FlowLayoutPanel>().Single().Controls.OfType<ComboBox>().Single(c => c.Name == "TileCount");
+                count.SelectedIndex = 1;
+                wheel(tiles, 120, new Point(4, 4));
+                Check(tiles.AutoScrollMinSize == new Size(768, 1536), "zoom scales all thirty-two rows in 512 tile view");
+                fake.Bank5[0x2000] = 13; plugin.Tick(); plugin.OSTick();
+                Check(tiles.AutoScrollMinSize == new Size(768, 1536), "live frame updates preserve tile zoom");
+                tabs.SelectedIndex = 1;
+                wheel(map, 120 * 2, new Point(4, 4));
+                fake.Bank5[0x2000] = 14;
+                fake.Bank5[0x2000 + 81 * 2] = 0x55; fake.Bank5[0x2001 + 81 * 2] = 0x61;
+                plugin.Tick(); plugin.OSTick();
+                Check(map.AutoScrollMinSize == new Size(1920, 768), "live frame updates preserve map zoom");
+                using (var pixels = new Bitmap(map.Width, map.Height))
+                {
+                    map.DrawToBitmap(pixels, new Rectangle(0, 0, map.Width, map.Height));
+                    int x = 24 + map.AutoScrollPosition.X, y = 24 + map.AutoScrollPosition.Y;
+                    Check(pixels.GetPixel(x, y).ToArgb() == Color.Red.ToArgb() && pixels.GetPixel(x + 23, y + 23).ToArgb() == Color.Red.ToArgb() &&
+                        pixels.GetPixel(x - 1, y).ToArgb() != Color.Red.ToArgb() && pixels.GetPixel(x + 24, y).ToArgb() != Color.Red.ToArgb(),
+                        "zoomed map renders a sharp tile at the expected scaled position and size");
+                }
+                using (var bitmap = new Bitmap(form.Width, form.Height))
+                { form.DrawToBitmap(bitmap, new Rectangle(0, 0, form.Width, form.Height)); bitmap.Save(System.IO.Path.Combine(outputDirectory, "tilemap-zoom.png"), ImageFormat.Png); }
             }
             finally { plugin.Quit(); }
         }
