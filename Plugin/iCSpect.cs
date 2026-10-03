@@ -654,5 +654,17 @@ namespace Plugin
         /// <returns>any return or null</returns>
         // ------------------------------------------------------------
         object Execute(string _command, params object[] args);
+
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Create a native OpenGL bitmap window  - avoid windows forms
+        /// </summary>
+        /// <param name="_title">Window title</param>
+        /// <param name="_width">Client Width</param>
+        /// <param name="_height">Client height</param>
+        /// <returns>Window handle</returns>
+        // ------------------------------------------------------------
+        iWindow OpenWindow(string _title, int _width, int _height);
     }
 }

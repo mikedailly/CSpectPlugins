@@ -33,12 +33,12 @@ namespace SpriteViewer
         int visible_lines;
 
         /// <summary>Sprite size</summary>
-        int SpriteSize = 16;
+        public int SpriteSize = 16;
 
-        bool Is16Bit = true;
+        public bool Is16Bit = true;
 
         /// <summary>The palette offset to use</summary>
-        int PaletteOffset = 0;
+        public int PaletteOffset = 0;
 
         public byte[] SpriteBuffer { get; set; }
 
