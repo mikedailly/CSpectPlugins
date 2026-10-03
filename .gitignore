@@ -37,3 +37,7 @@ z88dk/obj/
 Boriel/bin/
 Boriel/obj/
 Boriel/.vs/
+Printer/bin/Debug/Plugin.dll
+Printer/obj/Debug/Printer.csproj.AssemblyReference.cache
+Printer/obj/
+Printer/bin/
