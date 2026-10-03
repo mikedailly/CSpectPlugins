@@ -72,12 +72,23 @@ namespace DebugOut
             bool active = (bool)CSpect.GetGlobal(eGlobal.esxDOS);
             if (!active) return null;
 
-            Console.WriteLine(" DebugOut added");
+            bool enabled = false;
+            string[] args = Environment.GetCommandLineArgs();
+            foreach(string arg in args )
+            {
+                if( arg.ToLower() == "-debugout")
+                {
+                    enabled = true;
+                }
+            }
 
             // create a list of the ports we're interested in
             List<sIO> ports = new List<sIO>();
-            ports.Add(new sIO(PC_Address, eAccess.Memory_EXE));           // trap execution of RST $18
-
+            if (enabled)
+            {
+                Console.WriteLine(" DebugOut added");
+                ports.Add(new sIO(PC_Address, eAccess.Memory_EXE));           // trap execution of RST $18
+            }
             return ports;
         }
 
@@ -150,10 +161,6 @@ namespace DebugOut
 
             if (_type == eAccess.Memory_EXE && _port == PC_Address)
             {
-                // ROM paged out?
-                int b = CSpect.GetNextRegister(0x50);
-                if (b != 255) return 0;
-
                 _isvalid = true;
                 DoDebugPrint();
                 return (byte)0;

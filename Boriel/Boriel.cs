@@ -94,15 +94,22 @@ namespace BorielSymbols
         public bool LoadSymbols(string _path)
         {
             Console.WriteLine("Boriel MAP file loader - active");
+            Console.WriteLine("       MAP file = \""+_path+"\"");
             string MapName = _path;
             string BasicName = String.Empty;
 
             // still allow "Z:\....." etc
-            int index = _path.LastIndexOf(":");
+            int index = _path.LastIndexOf("|");
             if (index != 2)
             {
                 MapName = _path.Substring(0, index);
                 BasicName = _path.Substring(index + 1);
+                Console.WriteLine("   MAP = \"" + MapName + "\"");
+                Console.WriteLine("   BAS = \"" + BasicName + "\"");
+            }
+            else
+            {
+                Console.WriteLine("   MAP = \"" + MapName + "\"");
             }
 
 
