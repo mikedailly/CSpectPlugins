@@ -58,5 +58,51 @@ namespace SpriteViewer
             _bmp.UnlockBits(data);
         }
 
+        /// <summary>
+        ///     Draw a sprite into a bitmap
+        /// </summary>
+        /// <param name="_buffer"></param>
+        public static unsafe void DrawSprite(UInt32[] _bmp, bool _Is16Col, int _index, int _SpritePalette, byte[] _buffer)
+        {
+            fixed (UInt32* pBuffer = _bmp)
+            {
+                int stride = 16 * 4;
+                byte* pData8 = (byte*)pBuffer;
+                if (_Is16Col)
+                {
+                    _index = 128 * _index;
+                    for (int y = 0; y < 16; y++)
+                    {
+                        int dest = 0;
+                        UInt32* pLine = (UInt32*)(pData8 + (y * stride));
+                        for (int x = 0; x < (16 / 2); x++)
+                        {
+                            int c = (_buffer[_index] >> 4) & 0xf;
+                            UInt32 col = ZXPalette.Get((c + _SpritePalette) & 0xff); // (14 * 16));
+                            pLine[dest++] = col;
+                            c = (_buffer[_index++] & 0xf);
+                            col = ZXPalette.Get((c + _SpritePalette) & 0xff);
+                            pLine[dest++] = col;
+                        }
+                    }
+                }
+                else
+                {
+                    _index = 256 * _index;
+                    for (int y = 0; y < 16; y++)
+                    {
+                        UInt32* pLine = (UInt32*)(pData8 + (y * stride));
+                        for (int x = 0; x < 16; x++)
+                        {
+                            byte c = _buffer[_index++];
+                            UInt32 col = ZXPalette.Get((int)(c + _SpritePalette) & 0xff);
+                            pLine[x] = col;
+                        }
+                    }
+                }
+            }
+        }
+
+
     }
 }

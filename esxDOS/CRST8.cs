@@ -326,7 +326,7 @@ namespace esxDOS
             // Install the disk interface - this lets us replace it with a behind the scenes WAD system if we want....
             FileSystem = new HDFileSystem();
 
-            Debug.WriteLine("RST 0x08 interface added");
+            Console.WriteLine(" RST 0x08 interface added");
 
 
             // create a list of the ports we're interested in
@@ -845,8 +845,8 @@ namespace esxDOS
             OpenFileBuffer = Path.Combine(CurrentPath, OpenFileBuffer);
 
             // make sure it's 8.3 format name - at most....
-            bool verify = (bool) CSpect.GetGlobal(eGlobal.verify_EightDotThree);
-            if(verify)
+            //bool verify = (bool) CSpect.GetGlobal(eGlobal.verify_EightDotThree);
+            //if(verify)
             {
                 int cnt1 = 0;
                 int cnt2 = 0;

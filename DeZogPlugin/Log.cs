@@ -43,7 +43,7 @@ namespace DeZogPlugin
         /// Use this to print in front of each log.
         /// Is done automatically normally.
         /// </summary>
-        static public string Prefix = "Dezog Plugin: ";
+        static public string Prefix = " Dezog Plugin: ";
 
         /// <summary>
         /// To decide when to print the Prefix.

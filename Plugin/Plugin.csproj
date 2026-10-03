@@ -32,6 +32,17 @@
     <UseVSHostingProcess>false</UseVSHostingProcess>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'BundledGame Debug|AnyCPU'">
+    <OutputPath>bin\BundledGame Debug\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Optimize>true</Optimize>
+    <DebugType>pdbonly</DebugType>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <UseVSHostingProcess>false</UseVSHostingProcess>
+    <LangVersion>7.3</LangVersion>
+    <ErrorReport>prompt</ErrorReport>
+  </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -47,8 +58,12 @@
     <Compile Include="iCSpect.cs" />
     <Compile Include="IFileIO.cs" />
     <Compile Include="iPlugin.cs" />
+    <Compile Include="iSymbol.cs" />
+    <Compile Include="iWindow.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="SMemWrite.cs" />
     <Compile Include="SSprite.cs" />
+    <Compile Include="Symbol.cs" />
     <Compile Include="Z80Regs.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

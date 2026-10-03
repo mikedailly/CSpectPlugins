@@ -45,6 +45,45 @@ namespace SpriteViewer
         bool update_sprite_shapes = true;
         public bool OpenSpriteWindow = false;
 
+        iWindow Window;
+        List<UInt32[]> SpriteBitmap;
+
+        int PaletteOffset
+        {
+            get
+            {
+                if (form != null)
+                {
+                    return form.PaletteOffset;
+                }
+                return 0;
+
+            }
+        }
+
+        bool Is16Bit { 
+            get
+            {
+                if (form != null)
+                {
+                    return form.Is16Bit;
+                }
+                return false;
+            } 
+        }
+
+        int SpriteSize
+        {
+            get
+            {
+                if (form != null)
+                {
+                    return form.SpriteSize;
+                }
+                return 16;
+            }
+        }
+
         WindowWrapper hwndWrapper;
         // *********************************************************************************************************
         /// <summary>
@@ -57,7 +96,7 @@ namespace SpriteViewer
         // *********************************************************************************************************
         public List<sIO> Init(iCSpect _CSpect)
         {
-            Debug.WriteLine("Sprite Viewer added");
+            Console.WriteLine(" Sprite Viewer added");
 
             CSpect = _CSpect;
             IntPtr handle = (IntPtr)CSpect.GetGlobal(eGlobal.window_handle);
@@ -65,9 +104,16 @@ namespace SpriteViewer
 
             ZXPalette.Init();
 
+            SpriteBitmap = new List<uint[]>();
+            for (int i = 0; i < 128; i++)
+            {
+                SpriteBitmap.Add(new UInt32[16 * 16]);
+            }
+
             // Detect keypress for starting disassembler
             List<sIO> ports = new List<sIO>();
             ports.Add(new sIO("<ctrl><alt>s", eAccess.KeyPress, 0));                   // Key press callback
+            ports.Add(new sIO("<ctrl><alt>i", eAccess.KeyPress, 1));                   // Key press callback
             return ports;
         }
 
@@ -84,6 +130,12 @@ namespace SpriteViewer
             if (_id == 0)
             {
                 OpenSpriteWindow = true;
+                return true;
+            }
+            else if (_id == 1)
+            {
+                //UInt32[,] buffer = (UInt32[,])CSpect.GetGlobal(eGlobal.last_frame);
+                CSpect.LoadNex(@"C:\source\ZXSpectrum\Demo\Beast\beast.nex");
                 return true;
             }
             return false;
@@ -121,7 +173,50 @@ namespace SpriteViewer
         public void Reset()
         {
         }
+        public void UpdateSprites()
+        {
+            int cnt = 128;
+            if (!Is16Bit) cnt = 64;
+            for (int i = 0; i < cnt; i++)
+            {
+                ZXSprite.DrawSprite(SpriteBitmap[i], Is16Bit, i, PaletteOffset, SpriteMemory);
+            }
+        }
 
+
+        public void DrawSprites()
+        {
+            int cnt = 0;
+            int lines = 1;
+            if (!Is16Bit) lines = 2;
+
+            if (SpriteSize == 32)
+            {
+                int ycnt = 4 / lines;
+                for (int y = 0; y < ycnt; y++)
+                {
+                    for (int x = 0; x < 8; x++)
+                    {
+                        Window.DrawImage(SpriteBitmap[cnt++], (x*70),y*70, 16,16, 32,32);
+                        Window.DrawImage(SpriteBitmap[cnt++], (x*70)+31,y*70, 16,16, 32,32);
+                        Window.DrawImage(SpriteBitmap[cnt++], (x*70),(y*70)+31, 16,16, 32,32);
+                        Window.DrawImage(SpriteBitmap[cnt++], (x*70)+31,(y*70)+31, 16,16, 32,32);
+                    }
+                }
+            }
+            else
+            {
+                int ycnt = 16 / lines;
+                for (int y = 0; y < ycnt; y++)
+                {
+                    for (int x = 0; x < 8; x++)
+                    {
+                        Window.DrawImage(SpriteBitmap[cnt++], x*40,y*40, 16,16, 32,32);
+                    }
+                }
+
+            }
+        }
         // ******************************************************************************************
         /// <summary>
         ///     Called once an emulator frame - update sprite data if "Active"
@@ -148,6 +243,7 @@ namespace SpriteViewer
                     uint col = CSpect.GetColour(2, i);
                     ZXPalette.SpritePalette1[i] = col;
                 }
+                UpdateSprites();
             }
 
             // remember last set
@@ -171,6 +267,9 @@ namespace SpriteViewer
                     update_sprite_shapes = true;
                     form = new SpriteViewerForm(SpriteMemory, this);
                     form.Show();
+
+                    //Window = CSpect.OpenWindow("TestWindow", 653, 741);
+                    //Window.OnClosed += Window_OnClosed;
                 }
                 OpenSpriteWindow = false;
             }
@@ -180,11 +279,33 @@ namespace SpriteViewer
                 if (update_sprite_shapes) form.SpriteBuffer = SpriteMemory;
 
                 form.Invalidate();     // refresh IF it's changed
-                Application.DoEvents();
+                //Application.DoEvents();
                 doinvalidate = false;
                 update_sprite_shapes = false;
             }
+
+            /*if (Window != null)
+            {
+                UInt32[] screen = Window.Screen;
+                screen[0] = col;
+                col++;
+                for (int i = 0; i < (screen.Length - 1); i++)
+                {
+                    screen[i + 1] = screen[i];
+                }
+                DrawSprites();
+                Window.IsDirty = true;
+            }*/
         }
+
+        private void Window_OnClosed(object sender, EventArgs e)
+        {
+            SpriteViewerPlugin.form.Close();
+            SpriteViewerPlugin.Active = false;
+            //SpriteViewerPlugin.form = null;
+        }
+
+        UInt32 col = 0xff000000;
 
         // ******************************************************************************************
         /// <summary>

@@ -30,7 +30,7 @@ namespace FileAssociate
         // *********************************************************************************************************
         public List<sIO> Init(iCSpect _CSpect)
         {
-            Debug.WriteLine("Copper Disassembler added");
+            Console.WriteLine(" File assosiation added");
 
             CSpect = _CSpect;
 

@@ -126,7 +126,14 @@ namespace Plugin
         /// <summary>2mb array holding profile information for writing at each memory location</summary>
         profile_write,
         /// <summary>2mb array holding profile information for executing at each memory location</summary>
-        profile_exe
+        profile_exe,
+
+        /// <summary>Emulator pause state</summary>
+        pause,
+        /// <summary>Freerun state</summary>
+        freerun,
+        /// <summary>Get(only) the last display rendered - returns as a UInt32[y,x] array</summary>
+        last_frame,
     }
 
     // ********************************************************************************************************************************
@@ -262,6 +269,24 @@ namespace Plugin
         // ------------------------------------------------------------
         void PokePhysical(int _address, byte _value);
 
+        // ----------------------------------------------------------------------------------
+        /// <summary>
+        ///     Poke a byte into the nexts 2Mb address range - Allowing for ULA overlay
+        /// </summary>
+        /// <param name="_address">Physical address to poke into</param>
+        /// <param name="_values">Array of values to poke</param>
+        // ----------------------------------------------------------------------------------
+        void PokePhysicalULA(int _address, byte[] _value);
+
+        // ----------------------------------------------------------------------------------
+        /// <summary>
+        ///     Poke a byte into the nexts 2Mb address range - Allowing for ULA overlay
+        /// </summary>
+        /// <param name="_address">Physical address to poke into</param>
+        /// <param name="_value">Single value to poke</param>
+        // ----------------------------------------------------------------------------------
+        void PokePhysicalULA(int _address, byte _value);
+
         // ------------------------------------------------------------
         /// <summary>
         ///     Poke a byte into the 16K of sprite image memory
@@ -281,11 +306,12 @@ namespace Plugin
         /// </summary>
         /// <param name="_address">Address to peek</param>
         /// <param name="_count">number of bytes to "peek"</param>
+        /// <param name="_buffer">[optional] buffer to fill</param>
         /// <returns>
         ///     Array holding the requested location
         /// </returns>
         // ------------------------------------------------------------
-        byte[] Peek(ushort _address, int _count);
+        byte[] Peek(ushort _address, int _count, byte[] _buffer = null);
 
         // ------------------------------------------------------------
         /// <summary>
@@ -305,11 +331,12 @@ namespace Plugin
         /// </summary>
         /// <param name="_address">Address to peek</param>
         /// <param name="_count">number of bytes to "peek"</param>
+        /// <param name="_buffer">[optional] buffer to fill</param>
         /// <returns>
         ///     Array holding the requested location
         /// </returns>
         // ------------------------------------------------------------
-        byte[] PeekPhysical(int _address, int _count);
+        byte[] PeekPhysical(int _address, int _count, byte[] _buffer = null);
 
         // ------------------------------------------------------------
         /// <summary>
@@ -321,6 +348,42 @@ namespace Plugin
         /// </returns>
         // ------------------------------------------------------------
         byte PeekPhysical(int _address);
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Peek a byte from Nexts 2Mb address space - Allowing for ULA overlay
+        /// </summary>
+        /// <param name="_address">Address to peek</param>
+        /// <param name="_count">number of bytes to "peek"</param>
+        /// <param name="_buffer">option buffer to fill</param>
+        /// <returns>
+        ///     Array holding the requested location
+        /// </returns>
+        // ------------------------------------------------------------
+        byte[] PeekPhysicalULA(int _address, int _count, byte[] _buffer=null);
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Peek a single byte from Nexts 2Mb address space - Allowing for ULA overlay
+        /// </summary>
+        /// <param name="_address">Address to peek</param>
+        /// <returns>
+        ///     byte of peeked memory from the requested location
+        /// </returns>
+        // ------------------------------------------------------------
+        byte PeekPhysicalULA(int _address);
+
+        // ****************************************************************************
+        /// <summary>
+        ///     Get the memory access details of a specific address
+        /// </summary>
+        /// <param name="_physicalAddress">Address to get status of</param>
+        /// <param name="_ULAMemory">enable ULA memory overlay</param>
+        /// <returns>
+        ///     SMemWrite struct - if all zeros then never written
+        /// </returns>
+        // ****************************************************************************
+        unsafe SMemWrite GetMemoryAccess(int _physicalAddress, bool _ULAMemory);
 
         // ------------------------------------------------------------
         /// <summary>
@@ -342,19 +405,21 @@ namespace Plugin
         /// </summary>
         /// <param name="_reg">Register to set</param>
         /// <param name="_value">value to set</param>
+        /// <param name="_regindex">-1 for hardware order, or register index (i.e. multiwrite window reg, 0-3)</param>
         // ------------------------------------------------------------
-        void SetNextRegister(byte _reg, byte _value);
+        void SetNextRegister(byte _reg, byte _value, int _regindex=-1);
 
         // ------------------------------------------------------------
         /// <summary>
         ///     Read a next register
         /// </summary>
         /// <param name="_reg">register to read</param>
+        /// <param name="_regindex">-1 for hardware order, or register index (i.e. multiwrite window reg, 0-3)</param>
         /// <returns>
         ///     register value
         /// </returns>
         // ------------------------------------------------------------
-        byte GetNextRegister(byte _reg);
+        byte GetNextRegister(byte _reg, int _regindex=-1);
 
         // ------------------------------------------------------------
         /// <summary>
@@ -431,6 +496,30 @@ namespace Plugin
         /// </returns>
         // ------------------------------------------------------------
         string LookUpSymbol(int _address);
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Add a symbol
+        /// </summary>
+        /// <param name="_pszName">Symbol name</param>
+        /// <param name="_address">Symbol 64k address</param>
+        /// <param name="_physical">Symbol physical address</param>
+        /// <param name="_type">Type of symbol</param>
+        /// <returns>
+        ///     The defined symbol
+        /// </returns>
+        // ------------------------------------------------------------
+        Symbol AddSymbol(string _pszName, int _address, int _physical, eLabelType _type);
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Hex string to Int64 - will stop on an illegal character
+        /// </summary>
+        /// <param name="_hex">String to convert ($0000, 0x0000 or just 00000)</param>
+        /// <returns>The hex string as an Int64</returns>
+        // ------------------------------------------------------------
+        Int64 HexToInt64(string _hex);
+
 
         // ------------------------------------------------------------
         /// <summary>
@@ -550,6 +639,14 @@ namespace Plugin
 
         // ------------------------------------------------------------
         /// <summary>
+        ///     Load a .NEX file - or reload last file if name is ""
+        /// </summary>
+        /// <param name="_name">Name to load, or "" to load last NEX file</param>
+        // ------------------------------------------------------------
+        void LoadNex(string _name);
+
+        // ------------------------------------------------------------
+        /// <summary>
         ///     Execute another plugin command
         /// </summary>
         /// <param name="_command">the command string to execute</param>
@@ -557,5 +654,17 @@ namespace Plugin
         /// <returns>any return or null</returns>
         // ------------------------------------------------------------
         object Execute(string _command, params object[] args);
+
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Create a native OpenGL bitmap window  - avoid windows forms
+        /// </summary>
+        /// <param name="_title">Window title</param>
+        /// <param name="_width">Client Width</param>
+        /// <param name="_height">Client height</param>
+        /// <returns>Window handle</returns>
+        // ------------------------------------------------------------
+        iWindow OpenWindow(string _title, int _width, int _height);
     }
 }

@@ -33,12 +33,12 @@ namespace SpriteViewer
         int visible_lines;
 
         /// <summary>Sprite size</summary>
-        int SpriteSize = 16;
+        public int SpriteSize = 16;
 
-        bool Is16Bit = true;
+        public bool Is16Bit = true;
 
         /// <summary>The palette offset to use</summary>
-        int PaletteOffset = 0;
+        public int PaletteOffset = 0;
 
         public byte[] SpriteBuffer { get; set; }
 
@@ -74,10 +74,15 @@ namespace SpriteViewer
 
             this.Paint += new System.Windows.Forms.PaintEventHandler(SpriteViewer_Paint);
             SpritePanel.Paint += new System.Windows.Forms.PaintEventHandler(SpriteViewerForm_Paint);
+
+            // Enable double buffering on the sprite panel to eliminate flicker
+            SpritePanel.GetType().GetProperty("DoubleBuffered",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                .SetValue(SpritePanel, true, null);
+
             this.Refresh();
             this.Invalidate(true);
             Application.DoEvents();
-            this.DoubleBuffered = true;
         }
 
         // ******************************************************************************************

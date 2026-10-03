@@ -15,23 +15,32 @@
     <WarningLevel>4</WarningLevel>
     <Optimize Condition="'$(Configuration)' == 'Release'">true</Optimize>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <OutputPath>bin\Debug\</OutputPath>
+    <Optimize>true</Optimize>
+    <DebugType>pdbonly</DebugType>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <LangVersion>7.3</LangVersion>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+  </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Drawing" />
     <Reference Include="System.Windows.Forms" />
-    <Reference Include="Plugin">
-      <HintPath>$(CSpectDirectory)\Plugin.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
     <Compile Include="TileSnapshot.cs" />
     <Compile Include="TileMapEditor.cs" />
     <Compile Include="TileViewerPlugin.cs" />
-    <Compile Include="TileViewerForm.cs"><SubType>Form</SubType></Compile>
+    <Compile Include="TileViewerForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
-  <Target Name="CheckCSpectApi" BeforeTargets="ResolveReferences">
-    <Error Condition="!Exists('$(CSpectDirectory)\Plugin.dll')" Text="Set CSpectDirectory to your CSpect 3.1.0 or newer installation containing Plugin.dll." />
-  </Target>
+  <ItemGroup>
+    <ProjectReference Include="..\Plugin\Plugin.csproj">
+      <Project>{192437a5-3030-4606-bb5a-2c86ece66aef}</Project>
+      <Name>Plugin</Name>
+    </ProjectReference>
+  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
