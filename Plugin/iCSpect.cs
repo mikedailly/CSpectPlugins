@@ -666,5 +666,27 @@ namespace Plugin
         /// <returns>Window handle</returns>
         // ------------------------------------------------------------
         iWindow OpenWindow(string _title, int _width, int _height);
+
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Register a Dear ImGui draw callback. It's called once a frame on the main (render) thread,
+        ///     inside CSpect's ImGui frame, so it can use ImGuiNET.ImGui.* directly (reference the
+        ///     ImGui.NET package - same version as CSpect). Don't touch ImGui outside the callback.
+        /// </summary>
+        /// <param name="_draw">The draw callback</param>
+        /// <returns>
+        ///     true if the ImGui overlay is available, false if not (no native cimgui on this platform)
+        /// </returns>
+        // ------------------------------------------------------------
+        bool AddImGuiDraw(Action _draw);
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Remove a Dear ImGui draw callback added with AddImGuiDraw()
+        /// </summary>
+        /// <param name="_draw">The draw callback</param>
+        // ------------------------------------------------------------
+        void RemoveImGuiDraw(Action _draw);
     }
 }
