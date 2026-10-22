@@ -56,5 +56,19 @@ namespace Plugin
         unsafe void DrawImage(UInt32[] sprite, int x, int y, int SrcWidth, int SrcHeight, int destWidth, int destHeight); 
 
 
+        // ******************************************************************************************
+        /// <summary>
+        ///     Draw this window with Dear ImGui instead of the Screen bitmap.
+        ///     The callback is called once a frame on the main (render) thread, inside an ImGui frame that
+        ///     belongs to this window (its own ImGui context and input; fonts are shared with CSpect), so
+        ///     use ImGuiNET.ImGui.* inside it - reference the same ImGui.NET package version as CSpect.
+        ///     ImGui.GetIO().DisplaySize is the window's client size. Pass null to go back to the bitmap.
+        /// </summary>
+        /// <param name="_draw">ImGui draw callback, or null</param>
+        /// <returns>false if ImGui isn't available on this system (no native cimgui)</returns>
+        // ******************************************************************************************
+        bool SetImGuiDraw(Action _draw);
+
+
     }
 }

@@ -7,8 +7,8 @@
 //
 //      Released under the GNU 3 license - please see license file for more details
 //
-//      Uses the KEY extension method to start, Tick() to capture the copper and a Dear ImGui window
-//      (iCSpect.AddImGuiDraw) to display it - no WinForms, so it works anywhere CSpect's ImGui overlay does.
+//      Uses the KEY extension method to start, Tick() to capture the copper, and its own OS window
+//      (iCSpect.OpenWindow) drawn with Dear ImGui (iWindow.SetImGuiDraw) - no WinForms.
 //
 //      <ctrl><alt>c    open the disassembler
 //      <ctrl><alt>x    toggle the copper WAIT / IRQ line visualiser
@@ -41,8 +41,8 @@ namespace CopperDissassembler
         bool[] CopperIsWritten = new bool[COPPER_INSTRUCTIONS];
 
         volatile bool OpenCopperWindow = false;
-        bool FocusWindow = false;
-        Action DrawCallback;
+        /// <summary>Our window (null when closed)</summary>
+        iWindow Window;
 
         static readonly Vector4 ColUnwritten = new Vector4(1.0f, 0.35f, 0.35f, 1.0f);
         static readonly Vector4 ColWaitRow = new Vector4(0.22f, 0.24f, 0.32f, 1.0f);
@@ -61,7 +61,6 @@ namespace CopperDissassembler
             Console.WriteLine(" Copper Disassembler added");
 
             CSpect = _CSpect;
-            DrawCallback = Draw;
 
             // Detect keypress for starting disassembler
             List<sIO> ports = new List<sIO>();
@@ -101,8 +100,13 @@ namespace CopperDissassembler
         // ******************************************************************************************
         public void Quit()
         {
-            if (DrawCallback != null) CSpect.RemoveImGuiDraw(DrawCallback);
             Active = false;
+            if (Window != null)
+            {
+                iWindow w = Window;
+                Window = null;
+                w.Close();
+            }
         }
 
         // ******************************************************************************************
@@ -154,19 +158,30 @@ namespace CopperDissassembler
         {
             if (!OpenCopperWindow) return;
             OpenCopperWindow = false;
+            if (Window != null) return;                     // already open
 
-            FocusWindow = true;
-            if (Active) return;
+            iWindow w = CSpect.OpenWindow("Copper Disassembler", 560, 700);
+            if (w == null) return;
+            if (!w.SetImGuiDraw(Draw))
+            {
+                Console.WriteLine(" Copper Disassembler: Dear ImGui not available on this system");
+                w.Close();
+                return;
+            }
+            w.OnClosed += Window_OnClosed;
+            Window = w;
+            Active = true;
+        }
 
-            if (CSpect.AddImGuiDraw(DrawCallback))
-            {
-                Active = true;
-            }
-            else
-            {
-                CSpect.RemoveImGuiDraw(DrawCallback);
-                Console.WriteLine(" Copper Disassembler: ImGui overlay not available on this system");
-            }
+        // ******************************************************************************************
+        /// <summary>
+        ///     Our window was closed (by the user, or Quit)
+        /// </summary>
+        // ******************************************************************************************
+        private void Window_OnClosed(object sender, EventArgs e)
+        {
+            Active = false;
+            Window = null;
         }
 
         // ******************************************************************************************
@@ -181,33 +196,18 @@ namespace CopperDissassembler
 
         // ******************************************************************************************
         /// <summary>
-        ///     Close the window
-        /// </summary>
-        // ******************************************************************************************
-        void Close()
-        {
-            Active = false;
-            CSpect.RemoveImGuiDraw(DrawCallback);
-        }
-
-        // ******************************************************************************************
-        /// <summary>
-        ///     ImGui draw callback - main thread, inside CSpect's ImGui frame
+        ///     ImGui draw callback - main thread, inside this window's own ImGui frame.
+        ///     One undecorated ImGui panel fills the OS window.
         /// </summary>
         // ******************************************************************************************
         unsafe void Draw()
         {
-            if (!Active) return;
-
-            bool open = true;
-            ImGui.SetNextWindowSize(new Vector2(560, 700), ImGuiCond.FirstUseEver);
-            if (FocusWindow)
-            {
-                ImGui.SetNextWindowFocus();
-                FocusWindow = false;
-            }
-
-            if (ImGui.Begin("Copper Disassembler", ref open))
+            ImGui.SetNextWindowPos(Vector2.Zero);
+            ImGui.SetNextWindowSize(ImGui.GetIO().DisplaySize);
+            ImGuiWindowFlags wflags = ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize |
+                                      ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.NoBringToFrontOnFocus;
+            bool open = true;                               // no close button (NoDecoration) - the OS window closes it
+            if (ImGui.Begin("##CopperDisassembler", ref open, wflags))
             {
                 // Copper WAIT / IRQ line visualiser (also <ctrl><alt>x)
                 bool copperWait = (bool)CSpect.GetGlobal(eGlobal.copper_wait);
@@ -247,8 +247,6 @@ namespace CopperDissassembler
                 }
             }
             ImGui.End();
-
-            if (!open) Close();
         }
 
         // ******************************************************************************************
