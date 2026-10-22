@@ -1,29 +1,22 @@
-﻿using System;
+﻿// ********************************************************************************************************************************************
+//      CSpect Sprite Viewer extension, shows the sprite patterns in realtime
+//      Written by:
+//                  Mike Dailly
+//
+//      contributions by:
+//
+//      Released under the GNU 3 license - please see license file for more details
+//
+//      <ctrl><alt>s opens the viewer in its own OS window (iCSpect.OpenWindow) drawn with Dear ImGui
+//      (iWindow.SetImGuiDraw) - no WinForms.
+//
+// ********************************************************************************************************************************************
+using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Drawing;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows.Forms;
 using Plugin;
 
 namespace SpriteViewer
 {
-    class WindowWrapper : IWin32Window
-    {
-        private IntPtr mWindowHandle;
-        public IntPtr Handle
-        {
-            get { return mWindowHandle; }
-        }
-
-        public WindowWrapper(IntPtr _handle)
-        {
-            mWindowHandle = _handle;
-        }
-    }
-
     // *********************************************************************************************************
     /// <summary>
     ///     The Sprite Viewer
@@ -33,58 +26,34 @@ namespace SpriteViewer
     {
         /// <summary>CSpect emulator interface</summary>
         iCSpect CSpect;
-        public static bool Active;
-        public static SpriteViewerForm form;
+        /// <summary>Is the viewer window open?</summary>
+        public static volatile bool Active;
+
+        /// <summary>Sprite pattern memory, read on the emulator thread</summary>
         byte[] SpriteMemory = new byte[16384];
         byte[] LastSpriteMemory = new byte[16384];
-        SSprite[] SpriteData = new SSprite[128];
+        /// <summary>Sprite palette (9 bit RRRGGGBBB colours), read on the emulator thread</summary>
+        uint[] SpritePalette = new uint[256];
+        uint[] LastSpritePalette = new uint[256];
 
-        int[] Palette = new int[256];
+        /// <summary>Snapshot handed to the UI (main thread). Guarded by SnapshotLock</summary>
+        internal readonly object SnapshotLock = new object();
+        internal byte[] SnapshotMemory = new byte[16384];
+        internal uint[] SnapshotPalette = new uint[256];
+        /// <summary>Bumped each time the snapshot changes</summary>
+        internal volatile int SnapshotVersion = 0;
 
-        bool doinvalidate = false;
-        bool update_sprite_shapes = true;
-        public bool OpenSpriteWindow = false;
+        /// <summary>Which sprite palette to read: 0 = first, 1 = second (set by the UI)</summary>
+        internal volatile int PaletteSelect = 0;
+        int LastPaletteSelect = -1;
 
+        volatile bool OpenSpriteWindow = false;
+
+        /// <summary>Our window (null when closed)</summary>
         iWindow Window;
-        List<UInt32[]> SpriteBitmap;
+        /// <summary>The viewer UI (kept between openings so settings persist)</summary>
+        SpriteViewerView View;
 
-        int PaletteOffset
-        {
-            get
-            {
-                if (form != null)
-                {
-                    return form.PaletteOffset;
-                }
-                return 0;
-
-            }
-        }
-
-        bool Is16Bit { 
-            get
-            {
-                if (form != null)
-                {
-                    return form.Is16Bit;
-                }
-                return false;
-            } 
-        }
-
-        int SpriteSize
-        {
-            get
-            {
-                if (form != null)
-                {
-                    return form.SpriteSize;
-                }
-                return 16;
-            }
-        }
-
-        WindowWrapper hwndWrapper;
         // *********************************************************************************************************
         /// <summary>
         ///     Init the plugin
@@ -99,21 +68,11 @@ namespace SpriteViewer
             Console.WriteLine(" Sprite Viewer added");
 
             CSpect = _CSpect;
-            IntPtr handle = (IntPtr)CSpect.GetGlobal(eGlobal.window_handle);
-            hwndWrapper = new WindowWrapper(handle);
-
             ZXPalette.Init();
 
-            SpriteBitmap = new List<uint[]>();
-            for (int i = 0; i < 128; i++)
-            {
-                SpriteBitmap.Add(new UInt32[16 * 16]);
-            }
-
-            // Detect keypress for starting disassembler
             List<sIO> ports = new List<sIO>();
-            ports.Add(new sIO("<ctrl><alt>s", eAccess.KeyPress, 0));                   // Key press callback
-            ports.Add(new sIO("<ctrl><alt>i", eAccess.KeyPress, 1));                   // Key press callback
+            ports.Add(new sIO("<ctrl><alt>s", eAccess.KeyPress, 0));                   // Open the viewer
+            ports.Add(new sIO("<ctrl><alt>i", eAccess.KeyPress, 1));                   // Load test NEX
             return ports;
         }
 
@@ -121,12 +80,9 @@ namespace SpriteViewer
         /// <summary>
         ///     Key pressed callback.
         /// </summary>
-        /// <param name="_id"></param>
-        /// <returns></returns>
         // ******************************************************************************************
         public bool KeyPressed(int _id)
         {
-
             if (_id == 0)
             {
                 OpenSpriteWindow = true;
@@ -134,7 +90,6 @@ namespace SpriteViewer
             }
             else if (_id == 1)
             {
-                //UInt32[,] buffer = (UInt32[,])CSpect.GetGlobal(eGlobal.last_frame);
                 CSpect.LoadNex(@"C:\source\ZXSpectrum\Demo\Beast\beast.nex");
                 return true;
             }
@@ -148,16 +103,19 @@ namespace SpriteViewer
         // ******************************************************************************************
         public void Quit()
         {
+            Active = false;
+            if (Window != null)
+            {
+                iWindow w = Window;
+                Window = null;
+                w.Close();
+            }
         }
 
         // ******************************************************************************************
         /// <summary>
         ///     Read access type - not used
         /// </summary>
-        /// <param name="_type"></param>
-        /// <param name="_address"></param>
-        /// <param name="_isvalid"></param>
-        /// <returns></returns>
         // ******************************************************************************************
         public byte Read(eAccess _type, int _address, int _id, out bool _isvalid)
         {
@@ -173,148 +131,99 @@ namespace SpriteViewer
         public void Reset()
         {
         }
-        public void UpdateSprites()
-        {
-            int cnt = 128;
-            if (!Is16Bit) cnt = 64;
-            for (int i = 0; i < cnt; i++)
-            {
-                ZXSprite.DrawSprite(SpriteBitmap[i], Is16Bit, i, PaletteOffset, SpriteMemory);
-            }
-        }
 
-
-        public void DrawSprites()
-        {
-            int cnt = 0;
-            int lines = 1;
-            if (!Is16Bit) lines = 2;
-
-            if (SpriteSize == 32)
-            {
-                int ycnt = 4 / lines;
-                for (int y = 0; y < ycnt; y++)
-                {
-                    for (int x = 0; x < 8; x++)
-                    {
-                        Window.DrawImage(SpriteBitmap[cnt++], (x*70),y*70, 16,16, 32,32);
-                        Window.DrawImage(SpriteBitmap[cnt++], (x*70)+31,y*70, 16,16, 32,32);
-                        Window.DrawImage(SpriteBitmap[cnt++], (x*70),(y*70)+31, 16,16, 32,32);
-                        Window.DrawImage(SpriteBitmap[cnt++], (x*70)+31,(y*70)+31, 16,16, 32,32);
-                    }
-                }
-            }
-            else
-            {
-                int ycnt = 16 / lines;
-                for (int y = 0; y < ycnt; y++)
-                {
-                    for (int x = 0; x < 8; x++)
-                    {
-                        Window.DrawImage(SpriteBitmap[cnt++], x*40,y*40, 16,16, 32,32);
-                    }
-                }
-
-            }
-        }
         // ******************************************************************************************
         /// <summary>
-        ///     Called once an emulator frame - update sprite data if "Active"
+        ///     Called once an emulator frame - read sprite memory and palette if "Active",
+        ///     and hand a copy to the UI when either changes
         /// </summary>
         // ******************************************************************************************
         public void Tick()
         {
             if (!Active) return;
 
-            for (int i = 0; i < 128; i++)
-            {
-                SpriteData[i] = CSpect.GetSprite(i);
-            }
-
             SpriteMemory = CSpect.PeekSprite(0, 16384, SpriteMemory);
-
-            bool isEqual = Enumerable.SequenceEqual(SpriteMemory, LastSpriteMemory);
-            if (!isEqual)
+            int pal = (PaletteSelect == 0) ? 2 : 6;            // %010 = sprite first palette, %110 = sprite second
+            for (int i = 0; i < 256; i++)
             {
-                doinvalidate = true;
-                update_sprite_shapes = true;
-
-                for (int i = -0; i < 256; i++) {
-                    uint col = CSpect.GetColour(2, i);
-                    ZXPalette.SpritePalette1[i] = col;
-                }
-                UpdateSprites();
+                SpritePalette[i] = CSpect.GetColour(pal, i);
             }
 
-            // remember last set
-            Array.Copy(SpriteMemory,LastSpriteMemory,16384);            
-        }
+            bool changed = (LastPaletteSelect != PaletteSelect);
+            if (!changed)
+            {
+                for (int i = 0; i < 16384; i++) { if (SpriteMemory[i] != LastSpriteMemory[i]) { changed = true; break; } }
+            }
+            if (!changed)
+            {
+                for (int i = 0; i < 256; i++) { if (SpritePalette[i] != LastSpritePalette[i]) { changed = true; break; } }
+            }
+            if (!changed) return;
 
+            Array.Copy(SpriteMemory, LastSpriteMemory, 16384);
+            Array.Copy(SpritePalette, LastSpritePalette, 256);
+            LastPaletteSelect = PaletteSelect;
+            lock (SnapshotLock)
+            {
+                Array.Copy(SpriteMemory, SnapshotMemory, 16384);
+                Array.Copy(SpritePalette, SnapshotPalette, 256);
+                SnapshotVersion++;
+            }
+        }
 
         // ******************************************************************************************
         /// <summary>
-        ///     Called once an OS emulator frame - do all UI rendering, opening windows etc here.
+        ///     Called once an OS frame - open the window. (ImGui windows redraw every frame.)
         /// </summary>
         // ******************************************************************************************
         public void OSTick()
         {
             if (OpenSpriteWindow)
             {
-                if (!Active)
-                {
-                    Active = true;
-                    doinvalidate = true;
-                    update_sprite_shapes = true;
-                    form = new SpriteViewerForm(SpriteMemory, this);
-                    form.Show();
-
-                    //Window = CSpect.OpenWindow("TestWindow", 653, 741);
-                    //Window.OnClosed += Window_OnClosed;
-                }
                 OpenSpriteWindow = false;
+                if (Window == null) OpenWindow();
             }
-
-            if (doinvalidate && form!=null)
-            {
-                if (update_sprite_shapes) form.SpriteBuffer = SpriteMemory;
-
-                form.Invalidate();     // refresh IF it's changed
-                //Application.DoEvents();
-                doinvalidate = false;
-                update_sprite_shapes = false;
-            }
-
-            /*if (Window != null)
-            {
-                UInt32[] screen = Window.Screen;
-                screen[0] = col;
-                col++;
-                for (int i = 0; i < (screen.Length - 1); i++)
-                {
-                    screen[i + 1] = screen[i];
-                }
-                DrawSprites();
-                Window.IsDirty = true;
-            }*/
         }
 
+        // ******************************************************************************************
+        /// <summary>
+        ///     Open our window and hook up the ImGui view
+        /// </summary>
+        // ******************************************************************************************
+        void OpenWindow()
+        {
+            iWindow w = CSpect.OpenWindow("Sprite Viewer", 600, 720);
+            if (w == null) return;
+            if (View == null) View = new SpriteViewerView(this);
+            if (!w.SetImGuiDraw(View.Draw))
+            {
+                Console.WriteLine(" Sprite Viewer: Dear ImGui not available on this system");
+                w.Close();
+                return;
+            }
+            View.Attach(w);
+            w.OnClosed += Window_OnClosed;
+            Window = w;
+            LastPaletteSelect = -1;                 // force a fresh snapshot on the next emulator frame
+            Active = true;
+        }
+
+        // ******************************************************************************************
+        /// <summary>
+        ///     Our window was closed (by the user, or Quit) - its texture went with it
+        /// </summary>
+        // ******************************************************************************************
         private void Window_OnClosed(object sender, EventArgs e)
         {
-            SpriteViewerPlugin.form.Close();
-            SpriteViewerPlugin.Active = false;
-            //SpriteViewerPlugin.form = null;
+            Active = false;
+            Window = null;
+            if (View != null) View.Detach();
         }
-
-        UInt32 col = 0xff000000;
 
         // ******************************************************************************************
         /// <summary>
         ///     Write access type - not used
         /// </summary>
-        /// <param name="_type"></param>
-        /// <param name="_port"></param>
-        /// <param name="_value"></param>
-        /// <returns></returns>
         // ******************************************************************************************
         public bool Write(eAccess _type, int _port, int _id, byte _value)
         {
@@ -322,4 +231,3 @@ namespace SpriteViewer
         }
     }
 }
-

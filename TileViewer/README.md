@@ -1,6 +1,6 @@
 # TileViewer
 
-Live Spectrum Next tile and tilemap viewer/editor for CSpect 3.1.0 or newer. Open it with **Ctrl+Alt+T**.
+Live Spectrum Next tile and tilemap viewer/editor for CSpect. Open it with **Ctrl+Alt+T**. It opens in its own window, drawn with Dear ImGui (no WinForms), so it runs wherever CSpect does: Windows, macOS, Linux and Raspberry Pi.
 
 ## Viewing
 
@@ -22,7 +22,7 @@ Right-drag clears; middle-click picks. Editing works while running or paused and
 
 ## Build and install
 
-Requires MSBuild (Visual Studio Build Tools) and a CSpect installation containing `Plugin.dll`. Targets .NET Framework 4.5.2.
+Requires MSBuild (Visual Studio Build Tools) and a CSpect installation containing `Plugin.dll`. Targets .NET Framework 4.8 and references the ImGui.NET package (the same version as CSpect, which supplies the native `cimgui` library).
 
 From the repository root in PowerShell:
 
@@ -30,4 +30,4 @@ From the repository root in PowerShell:
 .\TileViewer\Build.ps1 -CSpectDirectory 'path\to\CSpect'
 ```
 
-The build creates `TileViewer\bin\Release\TileViewer.dll`. Copy it into the CSpect folder and restart the emulator. Add `-Test` to run the checks.
+The build creates `TileViewer\bin\Release\TileViewer.dll`. Copy it into the CSpect folder and restart the emulator. Add `-Test` to run the checks (they drive the viewer without a window, so no graphics are needed).
