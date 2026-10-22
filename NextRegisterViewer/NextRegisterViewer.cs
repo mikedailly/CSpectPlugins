@@ -1,32 +1,25 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Drawing;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows.Forms;
+// ********************************************************************************************************************************************
+//      CSpect Next Register Viewer extension, shows the next registers in realtime
+//      Written by:
+//                  Mike Dailly
+//
+//      contributions by:
+//
+//      Released under the GNU 3 license - please see license file for more details
+//
+//      <ctrl><shift>r opens the viewer in its own OS window (iCSpect.OpenWindow) drawn with Dear ImGui
+//      (iWindow.SetImGuiDraw) - no WinForms.
+//
+// ********************************************************************************************************************************************
 using Plugin;
+using System;
+using System.Collections.Generic;
 
 namespace NextRegisterViewer
 {
-    class WindowWrapper : IWin32Window
-    {
-        private IntPtr mWindowHandle;
-        public IntPtr Handle
-        {
-            get { return mWindowHandle; }
-        }
-
-        public WindowWrapper(IntPtr _handle)
-        {
-            mWindowHandle = _handle;
-        }
-    }
-
     // *********************************************************************************************************
     /// <summary>
-    ///     The copper disassembler
+    ///     The Next Register viewer
     /// </summary>
     // *********************************************************************************************************
     class NextRegisterViewerPlugin : iPlugin
@@ -35,16 +28,18 @@ namespace NextRegisterViewer
 
         /// <summary>CSpect emulator interface</summary>
         public iCSpect CSpect;
-        public static bool Active;
-        public static NextRegistersForm form;
+        /// <summary>Is the viewer window open?</summary>
+        public static volatile bool Active;
 
         public RegDetails Regs;
 
-        bool FirstRun = true;
-        bool doInvalidate = false;
-        bool OpenNextRegWindow = false;
+        volatile bool OpenNextRegWindow = false;
 
-        WindowWrapper hwndWrapper;
+        /// <summary>Our window (null when closed)</summary>
+        iWindow Window;
+        /// <summary>The viewer UI (kept between openings so settings persist)</summary>
+        NextRegisterViewerView View;
+
         // *********************************************************************************************************
         /// <summary>
         ///     Init the plugin
@@ -60,10 +55,8 @@ namespace NextRegisterViewer
 
             Regs = new RegDetails();
             CSpect = _CSpect;
-            IntPtr handle = (IntPtr)CSpect.GetGlobal(eGlobal.window_handle);
-            hwndWrapper = new WindowWrapper(handle);
 
-            // Detect keypress for starting disassembler
+            // Detect keypress for starting the viewer
             List<sIO> ports = new List<sIO>();
             ports.Add(new sIO("<ctrl><shift>r", eAccess.KeyPress, 0));                   // Key press callback
             return ports;
@@ -73,15 +66,13 @@ namespace NextRegisterViewer
         /// <summary>
         ///     Key pressed callback.
         /// </summary>
-        /// <param name="_id"></param>
-        /// <returns></returns>
         // ******************************************************************************************
         public bool KeyPressed(int _id)
         {
             if (_id == 0)
             {
                 OpenNextRegWindow = true;
-            }            
+            }
             return false;
         }
 
@@ -92,16 +83,19 @@ namespace NextRegisterViewer
         // ******************************************************************************************
         public void Quit()
         {
+            Active = false;
+            if (Window != null)
+            {
+                iWindow w = Window;
+                Window = null;
+                w.Close();
+            }
         }
 
         // ******************************************************************************************
         /// <summary>
         ///     Read access type - not used
         /// </summary>
-        /// <param name="_type"></param>
-        /// <param name="_address"></param>
-        /// <param name="_isvalid"></param>
-        /// <returns></returns>
         // ******************************************************************************************
         public byte Read(eAccess _type, int _address, int _id, out bool _isvalid)
         {
@@ -145,7 +139,7 @@ namespace NextRegisterViewer
                                 Regs.ClipWindowLayer2[2] = r3;
                                 Regs.ClipWindowLayer2[3] = r4;
                                 Regs.RegisterIsWritten[0x18] = DELAY_COUNTER;
-                                doInvalidate = true;
+                                
                             }
                             break;
                         }
@@ -163,7 +157,7 @@ namespace NextRegisterViewer
                                 Regs.ClipWindowSprites[2] = r3;
                                 Regs.ClipWindowSprites[3] = r4;
                                 Regs.RegisterIsWritten[0x19] = DELAY_COUNTER;
-                                doInvalidate = true;
+                                
                             }
                             break;
                         }
@@ -181,7 +175,7 @@ namespace NextRegisterViewer
                                 Regs.ClipWindowULA[2] = r3;
                                 Regs.ClipWindowULA[3] = r4;
                                 Regs.RegisterIsWritten[0x1A] = DELAY_COUNTER;
-                                doInvalidate = true;
+                                
                             }
                             break;
                         }
@@ -199,7 +193,7 @@ namespace NextRegisterViewer
                                 Regs.ClipWindowTilemap[2] = r3;
                                 Regs.ClipWindowTilemap[3] = r4;
                                 Regs.RegisterIsWritten[0x1B] = DELAY_COUNTER;
-                                doInvalidate = true;
+                                
                             }
                             break;
                         }
@@ -226,7 +220,7 @@ namespace NextRegisterViewer
                             {
                                 Regs.RegisterIsWritten[i] = DELAY_COUNTER;
                                 Regs.NextRegisters[i] = (byte)r;
-                                doInvalidate = true;
+                                
                             }
                             break;
                         }
@@ -237,10 +231,6 @@ namespace NextRegisterViewer
                 if (Regs.RegisterIsWritten[i] > 0)
                 {
                     Regs.RegisterIsWritten[i]--;
-                    if (Regs.RegisterIsWritten[i] == 0)
-                    {
-                        doInvalidate = true;
-                    }
                 }
             }
         }
@@ -249,7 +239,7 @@ namespace NextRegisterViewer
 
         // ******************************************************************************************
         /// <summary>
-        ///     Called once an emulator frame - update copper if "Active"
+        ///     Called once an emulator frame - read the registers if "Active"
         /// </summary>
         // ******************************************************************************************
         public void Tick()
@@ -262,42 +252,55 @@ namespace NextRegisterViewer
 
         // ******************************************************************************************
         /// <summary>
-        ///     Called once an OS emulator frame - do all UI rendering, opening windows etc here.
+        ///     Called once an OS frame - open the window. (ImGui windows redraw every frame.)
         /// </summary>
         // ******************************************************************************************
         public void OSTick()
         {
             if (OpenNextRegWindow)
             {
-                if (!Active)
-                {
-                    Active = true;
-                    form = new NextRegistersForm(Regs, CSpect);
-                    form.Show();
-                }
                 OpenNextRegWindow = false;
+                if (Window == null) OpenWindow();
             }
+        }
 
-
-            if (doInvalidate)
+        // ******************************************************************************************
+        /// <summary>
+        ///     Open our window and hook up the ImGui view
+        /// </summary>
+        // ******************************************************************************************
+        void OpenWindow()
+        {
+            iWindow w = CSpect.OpenWindow("Next Registers", 520, 640);
+            if (w == null) return;
+            if (View == null) View = new NextRegisterViewerView(Regs, CSpect);
+            if (!w.SetImGuiDraw(View.Draw))
             {
-                if (form != null)
-                {
-                    form.Invalidate();     // refresh IF it's changed
-                    Application.DoEvents();
-                }
-                doInvalidate = false;
+                Console.WriteLine(" Next Register Viewer: Dear ImGui not available on this system");
+                w.Close();
+                return;
             }
+            w.OnClosed += Window_OnClosed;
+            Window = w;
+            ReadRegisters();
+            Active = true;
+        }
+
+        // ******************************************************************************************
+        /// <summary>
+        ///     Our window was closed (by the user, or Quit)
+        /// </summary>
+        // ******************************************************************************************
+        private void Window_OnClosed(object sender, EventArgs e)
+        {
+            Active = false;
+            Window = null;
         }
 
         // ******************************************************************************************
         /// <summary>
         ///     Write access type - not used
         /// </summary>
-        /// <param name="_type"></param>
-        /// <param name="_port"></param>
-        /// <param name="_value"></param>
-        /// <returns></returns>
         // ******************************************************************************************
         public bool Write(eAccess _type, int _port, int _id, byte _value)
         {
