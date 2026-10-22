@@ -600,20 +600,32 @@ namespace MemoryViewer
         // ******************************************************************************************
         void DrawToolbar()
         {
-            // ---- row 1 ----
+            // A grid: [label][control] pairs, so labels sit to the left and line up between the rows
+            //   Mode        [..]   Byte Width   [..]   Bank:Offset  [..]      Palette  [..]   [Pause][Step]
+            //   Scale       [..]   Buffer Size  [..]                [x] ULA   Offset   [..]   [x] RealTime [SnapShot]
+            ImGuiTableFlags tflags = ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoPadOuterX;
+            if (!ImGui.BeginTable("##toolbar", 9, tflags)) return;
+            for (int c = 0; c < 9; c++) ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed);
+
+            // ================= row 1 =================
+            ImGui.TableNextRow();
+
+            Label("Mode");
+            ImGui.TableNextColumn();
             ImGui.SetNextItemWidth(150);
-            if (ImGui.Combo("Mode", ref ModeIndex, ModeNames, ModeNames.Length))
+            if (ImGui.Combo("##mode", ref ModeIndex, ModeNames, ModeNames.Length))
             {
                 Mode = (eMemoryMode)ModeIndex;
                 DoClear = true;
                 DoSnapshot = true;
             }
 
-            ImGui.SameLine();
-            ImGui.SetNextItemWidth(60);
+            Label("Byte Width");
+            ImGui.TableNextColumn();
+            ImGui.SetNextItemWidth(70);
             if (ImGui.InputText("##width", ref WidthText, 16)) SetWidth(WidthText);
             ImGui.SameLine(0, 0);
-            if (ImGui.BeginCombo("Byte Width", "", ImGuiComboFlags.NoPreview))
+            if (ImGui.BeginCombo("##widthpresets", "", ImGuiComboFlags.NoPreview))
             {
                 foreach (string p in WidthPresets)
                 {
@@ -626,58 +638,80 @@ namespace MemoryViewer
                 ImGui.EndCombo();
             }
 
-            ImGui.SameLine();
+            Label("Bank:Offset");
+            ImGui.TableNextColumn();
             ImGui.SetNextItemWidth(90);
-            if (ImGui.InputText("Bank:Offset", ref BankOffsetText, 32)) ParseBankOffset();
+            if (ImGui.InputText("##bankoffset", ref BankOffsetText, 32)) ParseBankOffset();
             ImGui.SameLine();
             if (ImGui.ArrowButton("##bankdown", ImGuiDir.Up)) StepBank(-1);
             ImGui.SameLine();
             if (ImGui.ArrowButton("##bankup", ImGuiDir.Down)) StepBank(1);
 
-            ImGui.SameLine();
+            Label("Palette");
+            ImGui.TableNextColumn();
             ImGui.SetNextItemWidth(90);
-            if (ImGui.Combo("Palette", ref PaletteIndex, PaletteNames, PaletteNames.Length))
+            if (ImGui.Combo("##palette", ref PaletteIndex, PaletteNames, PaletteNames.Length))
             {
                 Plugin.PaletteNumber = PaletteNumbers[PaletteIndex];
                 DoSnapshot = true;
             }
 
-
-            // ---- row 2 ----
-            if (ImGui.Checkbox("ULA Enable", ref ULAEnabled)) DoSnapshot = true;
-            ImGui.SameLine();
-            ImGui.Checkbox("RealTime", ref Realtime);
-
-            ImGui.SameLine();
-            ImGui.SetNextItemWidth(60);
-            if (ImGui.Combo("Scale", ref ScaleIndex, ScaleNames, ScaleNames.Length)) DrawScale = ScaleIndex + 1;
-
-            ImGui.SameLine();
-            ImGui.SetNextItemWidth(90);
-            if (ImGui.InputText("BufferSize", ref BuffSizeText, 16)) SetBufferSize(BuffSizeText);
-
-            ImGui.SameLine();
-            ImGui.SetNextItemWidth(60);
-            if (ImGui.Combo("Offset", ref PaletteOffset, OffsetNames, OffsetNames.Length))
-            {
-                PaletteOffset16 = PaletteOffset * 16;
-                DoSnapshot = true;
-            }
-
-            ImGui.SameLine();
-            if (ImGui.Button("SnapShot", new Vector2(70, 0))) DoSnapshot = true;
-
             // emulator control
+            ImGui.TableNextColumn();
             bool paused = (bool)CSpect.GetGlobal(eGlobal.pause);
-            ImGui.SameLine();
-            if (ImGui.Button(paused ? "Resume" : "Pause", new Vector2(70, 0)))
+            if (ImGui.Button(paused ? "Resume" : "Pause", new Vector2(80, 0)))
             {
                 CSpect.SetGlobal(eGlobal.pause, !paused);
             }
             ImGui.SameLine();
             ImGui.BeginDisabled(!paused);
-            if (ImGui.Button("Step", new Vector2(70, 0))) Plugin.DoStep = 2;
+            if (ImGui.Button("Step", new Vector2(80, 0))) Plugin.DoStep = 2;
             ImGui.EndDisabled();
+
+            // ================= row 2 =================
+            ImGui.TableNextRow();
+
+            Label("Scale");
+            ImGui.TableNextColumn();
+            ImGui.SetNextItemWidth(150);
+            if (ImGui.Combo("##scale", ref ScaleIndex, ScaleNames, ScaleNames.Length)) DrawScale = ScaleIndex + 1;
+
+            Label("Buffer Size");
+            ImGui.TableNextColumn();
+            ImGui.SetNextItemWidth(70);
+            if (ImGui.InputText("##buffsize", ref BuffSizeText, 16)) SetBufferSize(BuffSizeText);
+
+            ImGui.TableNextColumn();                        // no label - the checkbox carries its own
+            ImGui.TableNextColumn();
+            if (ImGui.Checkbox("ULA Enable", ref ULAEnabled)) DoSnapshot = true;
+
+            Label("Offset");
+            ImGui.TableNextColumn();
+            ImGui.SetNextItemWidth(90);
+            if (ImGui.Combo("##offset", ref PaletteOffset, OffsetNames, OffsetNames.Length))
+            {
+                PaletteOffset16 = PaletteOffset * 16;
+                DoSnapshot = true;
+            }
+
+            ImGui.TableNextColumn();
+            ImGui.Checkbox("RealTime", ref Realtime);
+            ImGui.SameLine();
+            if (ImGui.Button("SnapShot", new Vector2(80, 0))) DoSnapshot = true;
+
+            ImGui.EndTable();
+        }
+
+        // ******************************************************************************************
+        /// <summary>
+        ///     A label cell: text in the next column, vertically centred on the controls
+        /// </summary>
+        // ******************************************************************************************
+        static void Label(string _text)
+        {
+            ImGui.TableNextColumn();
+            ImGui.AlignTextToFramePadding();
+            ImGui.TextUnformatted(_text);
         }
 
         // ******************************************************************************************

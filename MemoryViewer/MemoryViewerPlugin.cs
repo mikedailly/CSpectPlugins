@@ -166,7 +166,7 @@ namespace MemoryViewer
         // ******************************************************************************************
         void OpenWindow()
         {
-            iWindow w = CSpect.OpenWindow("Memory Viewer", 840, 680);
+            iWindow w = CSpect.OpenWindow("Memory Viewer", 990, 680);
             if (w == null) return;
             if (View == null) View = new MemoryViewerView(this);
             if (!w.SetImGuiDraw(View.Draw))
