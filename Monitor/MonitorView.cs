@@ -32,6 +32,7 @@ namespace Monitor
         const float SPLIT = 6.0f;               // splitter bar thickness
         const float MIN_PANE = 60.0f;
 
+        static readonly string[] SpaceNames = { "64K", "Physical" };
         static readonly string[] FollowNames = { "None", "PC", "SP", "HL", "DE", "BC", "IX", "IY" };
 
         MonitorPlugin Plugin;
@@ -52,6 +53,12 @@ namespace Monitor
         int MemFollow = 0;
         int MemFollowLast = -1;
         int MemScrollTo = -1;
+        /// <summary>Memory pane shows physical memory (addresses bank:offset) rather than the CPU's 64K</summary>
+        bool MemPhysical;
+        int MemTopAddress;
+        bool MemEditPhysical;
+        byte[] PrevPhys;
+        int PrevPhysStart;
         int MemEditAddress = -1;
         string MemEditText = "";
         string RegEditName;
@@ -69,7 +76,7 @@ namespace Monitor
             if (s != null && s.StopCount != ShownStopCount)
             {
                 // the CPU moved on: remember what it looked like before, for highlighting changes
-                if (Shown != null) { PrevRegs = Shown.Regs; PrevMemory = Shown.Memory; }
+                if (Shown != null) { PrevRegs = Shown.Regs; PrevMemory = Shown.Memory; PrevPhys = Shown.PhysMemory; PrevPhysStart = Shown.PhysStart; }
                 ShownStopCount = s.StopCount;
             }
             Shown = s;
@@ -126,7 +133,7 @@ namespace Monitor
 
         static string LabelAt(MonitorSnapshot s, int _address)
         {
-            foreach (DisasmLine l in s.Disasm) if (l.Address == _address) return l.Label;
+            foreach (DisasmLine l in s.Disasm) if (!l.Physical && l.Address == _address) return l.Label;
             return null;
         }
 
@@ -215,7 +222,7 @@ namespace Monitor
             ImGui.AlignTextToFramePadding();
             ImGui.TextUnformatted("Goto");
             ImGui.SameLine();
-            if (HexInput("##disgoto", ref DisasmGotoText, 60)) { int a; if (ParseHex(DisasmGotoText, out a)) Plugin.DisasmGoto(a); }
+            if (AddressInput("##disgoto", ref DisasmGotoText)) { int a; bool phys; if (MonitorAddress.TryParse(DisasmGotoText, out a, out phys)) Plugin.DisasmGoto(a, phys); }
             ImGui.SameLine();
             bool follow = Plugin.IsFollowingPC;
             ImGui.BeginDisabled(follow);
@@ -251,30 +258,34 @@ namespace Monitor
                     ImGui.TableSetColumnIndex(3);
                     ImGui.TextColored(ColLabel, l.Label + ":");
                 }
+                // the 64K address of this line (physical lines only have one while their bank is paged in)
+                int logical = l.Physical ? s.ToLogical(l.Address) : l.Address;
+                string id = (l.Physical ? "p" : "l") + l.Address;
                 ImGui.TableNextRow();
-                if (s.Stopped && l.Address == s.Regs.PC) ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(ColPCRow));
+                if (s.Stopped && logical == s.Regs.PC) ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(ColPCRow));
 
                 ImGui.TableSetColumnIndex(1);
-                ImGui.Selectable("$" + l.Address.ToString("X4") + "##dl" + l.Address, false, ImGuiSelectableFlags.SpanAllColumns | ImGuiSelectableFlags.AllowOverlap);
-                if (ImGui.BeginPopupContextItem("##dctx" + l.Address))
+                string where = MonitorAddress.Format(l.Address, l.Physical);
+                ImGui.Selectable(where + "##dl" + id, false, ImGuiSelectableFlags.SpanAllColumns | ImGuiSelectableFlags.AllowOverlap);
+                if (ImGui.BeginPopupContextItem("##dctx" + id))
                 {
-                    ImGui.TextDisabled("$" + l.Address.ToString("X4"));
-                    if (ImGui.MenuItem(l.Breakpoint ? "Clear breakpoint" : "Set breakpoint")) Plugin.ToggleBreakpoint(l.Address);
-                    if (ImGui.MenuItem("Run to here", null, false, s.Stopped)) Plugin.RunTo(l.Address);
-                    int addr = l.Address;
-                    if (ImGui.MenuItem("Set PC here", null, false, s.Stopped)) Plugin.SetRegisters(r => r.PC = (ushort)addr);
-                    if (ImGui.MenuItem("Show in memory")) MemScrollTo = l.Address;
+                    ImGui.TextDisabled(where + OtherForm(s, l.Address, l.Physical));
+                    if (ImGui.MenuItem(l.Breakpoint ? "Clear breakpoint" : "Set breakpoint")) Plugin.ToggleBreakpoint(l.Address, l.Physical);
+                    if (ImGui.MenuItem("Run to here", null, false, s.Stopped && logical >= 0)) Plugin.RunTo(logical);
+                    if (ImGui.MenuItem("Set PC here", null, false, s.Stopped && logical >= 0)) { int pcTo = logical; Plugin.SetRegisters(r => r.PC = (ushort)pcTo); }
+                    if (ImGui.MenuItem("Show in memory")) { MemPhysical = l.Physical; MemScrollTo = l.Address; MemFollow = 0; }
                     ImGui.EndPopup();
                 }
                 if (ImGui.IsItemHovered() && !ImGui.IsPopupOpen("", ImGuiPopupFlags.AnyPopupId))
                 {
-                    ImGui.SetTooltip(l.TStates2 > 0 ? string.Format("{0}/{1} T-states", l.TStates1, l.TStates2) : string.Format("{0} T-states", l.TStates1));
+                    string t = l.TStates2 > 0 ? string.Format("{0}/{1} T-states", l.TStates1, l.TStates2) : string.Format("{0} T-states", l.TStates1);
+                    ImGui.SetTooltip(where + OtherForm(s, l.Address, l.Physical) + "\n" + t);
                 }
 
                 // gutter: breakpoint marker, click to toggle (after the row selectable, so it gets the click)
                 ImGui.TableSetColumnIndex(0);
                 Vector2 p = ImGui.GetCursorScreenPos();
-                if (ImGui.InvisibleButton("##bp" + l.Address, new Vector2(14, ImGui.GetTextLineHeight()))) Plugin.ToggleBreakpoint(l.Address);
+                if (ImGui.InvisibleButton("##bp" + id, new Vector2(14, ImGui.GetTextLineHeight()))) Plugin.ToggleBreakpoint(l.Address, l.Physical);
                 if (l.Breakpoint)
                     ImGui.GetWindowDrawList().AddCircleFilled(p + new Vector2(7, ImGui.GetTextLineHeight() * 0.5f), 5, ImGui.GetColorU32(ColBreakpoint));
                 else if (ImGui.IsItemHovered())
@@ -446,12 +457,28 @@ namespace Monitor
             ImGui.AlignTextToFramePadding();
             ImGui.TextUnformatted("Goto");
             ImGui.SameLine();
-            if (HexInput("##memgoto", ref MemGotoText, 60)) { int a; if (ParseHex(MemGotoText, out a)) { MemScrollTo = a & 0xffff; MemFollow = 0; } }
+            if (AddressInput("##memgoto", ref MemGotoText))
+            {
+                int a; bool isPhys;
+                if (MonitorAddress.TryParse(MemGotoText, out a, out isPhys)) { MemPhysical = isPhys; MemScrollTo = a; MemFollow = 0; }
+            }
+            ImGui.SameLine(0, 16);
+            int space = MemPhysical ? 1 : 0;
+            ImGui.SetNextItemWidth(90);
+            if (ImGui.Combo("##memspace", ref space, SpaceNames, SpaceNames.Length) && (space == 1) != MemPhysical)
+            {
+                // switch view, staying on the same memory if it's paged in
+                int other = MemPhysical ? s.ToLogical(MemTopAddress) : s.ToPhysical(MemTopAddress & 0xffff);
+                MemPhysical = space == 1;
+                MemScrollTo = Math.Max(0, other);
+                if (MemPhysical) MemFollow = 0;
+            }
+            if (ImGui.IsItemHovered()) ImGui.SetTooltip("64K: what the CPU sees through the MMU\nPhysical: all 2MB, addressed as bank:offset (8K banks)");
             ImGui.SameLine(0, 16);
             ImGui.TextUnformatted("Follow");
             ImGui.SameLine();
             ImGui.SetNextItemWidth(70);
-            if (ImGui.Combo("##memfollow", ref MemFollow, FollowNames, FollowNames.Length)) MemFollowLast = -1;
+            if (ImGui.Combo("##memfollow", ref MemFollow, FollowNames, FollowNames.Length)) { MemFollowLast = -1; if (MemFollow != 0) MemPhysical = false; }
 
             if (MemFollow != 0)
             {
@@ -467,55 +494,109 @@ namespace Monitor
                 MemScrollTo = -1;
             }
 
+            bool phys = MemPhysical;
+            int rows = phys ? MonitorAddress.PhysicalSize / 16 : 4096;
             float charW = ImGui.CalcTextSize("0").X;
             ImGuiListClipperPtr clipper;
             unsafe { clipper = new ImGuiListClipperPtr(ImGuiNative.ImGuiListClipper_ImGuiListClipper()); }
-            clipper.Begin(4096, lineH);
-            byte[] m = s.Memory;
+            clipper.Begin(rows, lineH);
+            int firstRow = int.MaxValue, lastRow = 0;
             while (clipper.Step())
             {
                 for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; row++)
                 {
+                    firstRow = Math.Min(firstRow, row); lastRow = Math.Max(lastRow, row);
                     int a = row << 4;
-                    ImGui.TextColored(ColDim, a.ToString("X4"));
+                    // address: $XXXX in the 64K view, bank:$offset for physical memory
+                    ImGui.TextColored(ColDim, phys ? MonitorAddress.Format(a, true).PadLeft(9) : a.ToString("X4"));
                     ImGui.SameLine(0, charW * 2);
+                    var ascii = new StringBuilder(16);
                     for (int i = 0; i < 16; i++)
                     {
                         int at = a + i;
                         if (i == 8) ImGui.SameLine(0, charW); else if (i > 0) ImGui.SameLine(0, charW);
-                        if (MemEditAddress == at && s.Stopped)
+                        int v = MemByte(s, at, phys);
+                        ascii.Append(v >= 32 && v < 127 ? (char)v : '.');
+                        if (MemEditAddress == at && MemEditPhysical == phys && s.Stopped)
                         {
                             ImGui.SetKeyboardFocusHere();
                             if (HexInput("##memedit", ref MemEditText, charW * 3))
                             {
-                                int v; if (ParseHex(MemEditText, out v)) Plugin.Poke(at, (byte)v);
+                                int nv; if (ParseHex(MemEditText, out nv)) Plugin.Poke(at, phys, (byte)nv);
                                 MemEditAddress = -1;
                             }
                             else if (ImGui.IsItemDeactivated()) MemEditAddress = -1;
                             continue;
                         }
-                        bool changed = PrevMemory != null && PrevMemory[at] != m[at];
-                        bool pc = at == s.Regs.PC, sp = at == s.Regs.SP || at == ((s.Regs.SP + 1) & 0xffff);
+                        if (v < 0) { ImGui.TextColored(ColDim, "--"); continue; }        // physical bytes not read yet
+                        int was = PrevByte(at, phys);
+                        bool changed = was >= 0 && was != v;
+                        bool pc = !phys && at == s.Regs.PC, sp = !phys && (at == s.Regs.SP || at == ((s.Regs.SP + 1) & 0xffff));
                         if (changed) ImGui.PushStyleColor(ImGuiCol.Text, ColChanged);
                         Vector2 cp = ImGui.GetCursorScreenPos();
                         if (pc || sp) ImGui.GetWindowDrawList().AddRectFilled(cp, cp + new Vector2(charW * 2, ImGui.GetTextLineHeight()), ImGui.GetColorU32(pc ? ColPCRow : ColSP));
-                        ImGui.TextUnformatted(m[at].ToString("X2"));
+                        ImGui.TextUnformatted(v.ToString("X2"));
                         if (changed) ImGui.PopStyleColor();
                         if (ImGui.IsItemHovered())
                         {
-                            ImGui.SetTooltip(string.Format("${0:X4}: ${1:X2} = {1}{2}", at, m[at], (m[at] >= 32 && m[at] < 127) ? "  '" + (char)m[at] + "'" : ""));
-                            if (s.Stopped && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)) { MemEditAddress = at; MemEditText = m[at].ToString("X2"); }
+                            ImGui.SetTooltip(string.Format("{0}{1}: ${2:X2} = {2}{3}", MonitorAddress.Format(at, phys), OtherForm(s, at, phys), v,
+                                (v >= 32 && v < 127) ? "  '" + (char)v + "'" : ""));
+                            if (s.Stopped && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)) { MemEditAddress = at; MemEditPhysical = phys; MemEditText = v.ToString("X2"); }
                         }
                     }
                     ImGui.SameLine(0, charW * 2);
-                    var sb = new StringBuilder(16);
-                    for (int i = 0; i < 16; i++) { byte b = m[a + i]; sb.Append(b >= 32 && b < 127 ? (char)b : '.'); }
-                    ImGui.TextColored(ColDim, sb.ToString());
+                    ImGui.TextColored(ColDim, ascii.ToString());
                 }
             }
             clipper.End();
             clipper.Destroy();
+            if (firstRow != int.MaxValue) MemTopAddress = firstRow << 4;
+
+            // physical memory is read on demand: the rows on screen plus a screen's worth either side for scrolling
+            if (phys && firstRow != int.MaxValue)
+            {
+                int pad = lastRow - firstRow + 1;
+                int from = Math.Max(0, firstRow - pad);
+                int to = Math.Min(rows, lastRow + 1 + pad);
+                Plugin.SetPhysicalWindow(from << 4, (to - from) << 4);
+            }
+            else Plugin.SetPhysicalWindow(0, 0);
             ImGui.EndChild();
+        }
+
+        /// <summary>A byte as last captured, or -1 if not read</summary>
+        static int MemByte(MonitorSnapshot s, int _address, bool _physical)
+        {
+            if (!_physical) return s.Memory[_address & 0xffff];
+            if (s.PhysMemory == null) return -1;
+            int i = _address - s.PhysStart;
+            return (i >= 0 && i < s.PhysMemory.Length) ? s.PhysMemory[i] : -1;
+        }
+
+        /// <summary>The same byte before the last step/stop, or -1</summary>
+        int PrevByte(int _address, bool _physical)
+        {
+            if (!_physical) return PrevMemory == null ? -1 : PrevMemory[_address & 0xffff];
+            if (PrevPhys == null) return -1;
+            int i = _address - PrevPhysStart;
+            return (i >= 0 && i < PrevPhys.Length) ? PrevPhys[i] : -1;
+        }
+
+        /// <summary>" (10:$0000)" for a paged-in 64K address, " ($C000)" for a paged-in physical one</summary>
+        static string OtherForm(MonitorSnapshot s, int _address, bool _physical)
+        {
+            if (_physical) { int l = s.ToLogical(_address); return l >= 0 ? " ($" + l.ToString("X4") + ")" : ""; }
+            int p = s.ToPhysical(_address);
+            return p >= 0 ? " (" + MonitorAddress.Format(p, true) + ")" : " (ROM)";
+        }
+
+        /// <summary>Address entry: $hex, decimal, or bank:offset</summary>
+        static bool AddressInput(string _id, ref string _text)
+        {
+            ImGui.SetNextItemWidth(90);
+            bool done = ImGui.InputText(_id, ref _text, 16, ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.AutoSelectAll | ImGuiInputTextFlags.CharsNoBlank);
+            if (ImGui.IsItemHovered()) ImGui.SetTooltip("$8000 hex, 32768 decimal, or bank:offset for physical memory\n(8K banks, e.g. 10:$0000 or 10:0)");
+            return done;
         }
 
         static int FollowValue(Z80Regs r, int _which)

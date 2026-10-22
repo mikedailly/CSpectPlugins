@@ -43,6 +43,10 @@ namespace Monitor
         /// <summary>Disassembly: follow PC, or show from DisasmStart</summary>
         bool DisasmFollow = true;
         int DisasmStart = 0;
+        /// <summary>Disassembly shows physical memory (DisasmStart is physical)</summary>
+        bool DisasmPhysical = false;
+        /// <summary>Physical memory the memory pane wants (count 0 = none)</summary>
+        int PhysWantStart = 0, PhysWantCount = 0;
         /// <summary>Lines to scroll the disassembly by (+/-), applied on the emulator thread</summary>
         int DisasmScroll = 0;
         int DisasmLines = 40;
@@ -145,12 +149,25 @@ namespace Monitor
         void Stepped()
         {
             StopCount++;
-            lock (Gate) { DisasmFollow = true; DisasmScroll = 0; }
+            lock (Gate) { DisasmFollow = true; DisasmPhysical = false; DisasmScroll = 0; }
         }
         public void ClearAllBreakpoints() { Queue(delegate { CSpect.Debugger(eDebugCommand.ClearAllBreakpoints); TempBreakpoint = -1; }); }
 
-        public void ToggleBreakpoint(int _address)
+        public void ToggleBreakpoint(int _address) { ToggleBreakpoint(_address, false); }
+
+        /// <summary>Toggle a breakpoint on a 64k address, or on a physical address (CSpect's physical breakpoints)</summary>
+        public void ToggleBreakpoint(int _address, bool _physical)
         {
+            if (_physical)
+            {
+                _address = Wrap(_address, true);
+                Queue(delegate
+                {
+                    bool set = CSpect.Debugger(eDebugCommand.GetPhysicalBreakpoint, _address) != 0;
+                    CSpect.Debugger(set ? eDebugCommand.ClearPhysicalBreakpoint : eDebugCommand.SetPhysicalBreakpoint, _address);
+                });
+                return;
+            }
             _address &= 0xffff;
             Queue(delegate
             {
@@ -188,7 +205,25 @@ namespace Monitor
             });
         }
 
-        public void Poke(int _address, byte _value) { Queue(delegate { CSpect.Poke((ushort)(_address & 0xffff), _value); }); }
+        public void Poke(int _address, byte _value) { Poke(_address, false, _value); }
+        public void Poke(int _address, bool _physical, byte _value)
+        {
+            if (_physical) { int a = Wrap(_address, true); Queue(delegate { CSpect.PokePhysical(a, _value); }); }
+            else Queue(delegate { CSpect.Poke((ushort)(_address & 0xffff), _value); });
+        }
+
+        /// <summary>The memory pane is showing physical memory from _start: read _count bytes there each frame (0 = stop)</summary>
+        public void SetPhysicalWindow(int _start, int _count)
+        {
+            lock (Gate) { PhysWantStart = Wrap(_start, true); PhysWantCount = Math.Max(0, Math.Min(_count, 64 * 1024)); }
+        }
+
+        static int Wrap(int _address, bool _physical)
+        {
+            if (!_physical) return _address & 0xffff;
+            int m = _address % MonitorAddress.PhysicalSize;
+            return m < 0 ? m + MonitorAddress.PhysicalSize : m;
+        }
 
         public void SetRemote(bool _hideCSpectDebugger)
         {
@@ -196,15 +231,20 @@ namespace Monitor
         }
 
         /// <summary>Disassembly view: follow PC</summary>
-        public void DisasmFollowPC() { lock (Gate) { DisasmFollow = true; DisasmScroll = 0; } }
-        /// <summary>Disassembly view: show from an address</summary>
-        public void DisasmGoto(int _address) { lock (Gate) { DisasmFollow = false; DisasmStart = _address & 0xffff; DisasmScroll = 0; } }
+        public void DisasmFollowPC() { lock (Gate) { DisasmFollow = true; DisasmPhysical = false; DisasmScroll = 0; } }
+        /// <summary>Disassembly view: show from a 64k address</summary>
+        public void DisasmGoto(int _address) { DisasmGoto(_address, false); }
+        /// <summary>Disassembly view: show from a 64k or physical address</summary>
+        public void DisasmGoto(int _address, bool _physical)
+        {
+            lock (Gate) { DisasmFollow = false; DisasmPhysical = _physical; DisasmStart = Wrap(_address, _physical); DisasmScroll = 0; }
+        }
         /// <summary>Disassembly view: scroll by instructions (+ down, - up)</summary>
         public void DisasmScrollBy(int _lines)
         {
             lock (Gate)
             {
-                if (DisasmFollow && Latest != null && Latest.Disasm.Length > 0) DisasmStart = Latest.Disasm[0].Address;
+                if (DisasmFollow && Latest != null && Latest.Disasm.Length > 0) { DisasmStart = Latest.Disasm[0].Address; DisasmPhysical = false; }
                 DisasmFollow = false;
                 DisasmScroll += _lines;
             }
@@ -260,30 +300,52 @@ namespace Monitor
             for (int i = 0; i < 8; i++) s.Mmu[i] = CSpect.GetNextRegister((byte)(0x50 + i));
 
             // ---- disassembly ----
-            bool follow; int start, scroll, lines, visible;
-            lock (Gate) { follow = DisasmFollow; start = DisasmStart; scroll = DisasmScroll; lines = DisasmLines; visible = DisasmVisible; DisasmScroll = 0; }
+            bool follow, phys; int start, scroll, lines, visible, physStart, physCount;
+            lock (Gate)
+            {
+                follow = DisasmFollow; phys = DisasmPhysical && !DisasmFollow; start = DisasmStart; scroll = DisasmScroll;
+                lines = DisasmLines; visible = DisasmVisible; DisasmScroll = 0;
+                physStart = PhysWantStart; physCount = PhysWantCount;
+            }
             int pc = s.Regs.PC;
             if (follow) start = FollowPC(pc, lines, visible);
-            if (scroll > 0) for (int i = 0; i < scroll; i++) start = (start + Length(start)) & 0xffff;
-            else if (scroll < 0) start = BackLines(start, -scroll);
+            if (scroll > 0) for (int i = 0; i < scroll; i++) start = Wrap(start + Length(start, phys), phys);
+            else if (scroll < 0) start = BackLines(start, -scroll, phys);
             if (!follow) lock (Gate) { if (!DisasmFollow) DisasmStart = start; }
 
             var dis = new DisasmLine[lines];
             int a = start;
             for (int i = 0; i < lines; i++)
             {
-                DissassemblyLine d = CSpect.DissasembleMemory(a, false);
+                DissassemblyLine d = CSpect.DissasembleMemory(a, phys);
                 int len = Math.Max(1, Math.Min(6, d.bytes));
-                var line = new DisasmLine { Address = a, Length = len, Text = d.line ?? "", TStates1 = d.TStates1, TStates2 = d.TStates2 };
-                line.Bytes = new byte[len];
-                for (int b = 0; b < len; b++) line.Bytes[b] = s.Memory[(a + b) & 0xffff];
-                line.Breakpoint = CSpect.Debugger(eDebugCommand.GetBreakpoint, a) != 0;
-                line.Label = Label(a);
+                var line = new DisasmLine { Address = a, Physical = phys, Length = len, Text = d.line ?? "", TStates1 = d.TStates1, TStates2 = d.TStates2 };
+                if (phys)
+                {
+                    line.Bytes = CSpect.PeekPhysical(a, len);
+                    line.Breakpoint = CSpect.Debugger(eDebugCommand.GetPhysicalBreakpoint, a) != 0;
+                    int logical = s.ToLogical(a);                       // labels only for banks paged in right now
+                    line.Label = logical >= 0 ? Label(logical) : null;
+                }
+                else
+                {
+                    line.Bytes = new byte[len];
+                    for (int b = 0; b < len; b++) line.Bytes[b] = s.Memory[(a + b) & 0xffff];
+                    line.Breakpoint = CSpect.Debugger(eDebugCommand.GetBreakpoint, a) != 0;
+                    line.Label = Label(a);
+                }
                 dis[i] = line;
-                a = (a + len) & 0xffff;
+                a = Wrap(a + len, phys);
             }
             s.Disasm = dis;
-            LastStart = start; LastCount = lines;
+            // FollowPC works in the 64k view
+            if (phys) LastStart = -1; else { LastStart = start; LastCount = lines; }
+
+            if (physCount > 0)
+            {
+                s.PhysStart = physStart;
+                s.PhysMemory = CSpect.PeekPhysical(physStart, physCount);
+            }
 
             // ---- stack labels (return addresses) ----
             s.StackLabels = new string[MonitorSnapshot.StackBelow + MonitorSnapshot.StackWords];
@@ -332,9 +394,10 @@ namespace Monitor
             return starts[index - lastOk];                                      // scroll so PC sits on that row
         }
 
-        int Length(int _address)
+        int Length(int _address) { return Length(_address, false); }
+        int Length(int _address, bool _physical)
         {
-            DissassemblyLine d = CSpect.DissasembleMemory(_address & 0xffff, false);
+            DissassemblyLine d = CSpect.DissasembleMemory(Wrap(_address, _physical), _physical);
             return Math.Max(1, Math.Min(6, d.bytes));
         }
 
@@ -345,18 +408,19 @@ namespace Monitor
         ///     instruction before _address that most of the paths that land exactly on it agree on.
         /// </summary>
         // ******************************************************************************************
-        internal int BackLines(int _address, int _lines)
+        internal int BackLines(int _address, int _lines) { return BackLines(_address, _lines, false); }
+        internal int BackLines(int _address, int _lines, bool _physical)
         {
-            int a = _address & 0xffff;
-            for (int n = 0; n < _lines; n++) a = PreviousInstruction(a);
+            int a = Wrap(_address, _physical);
+            for (int n = 0; n < _lines; n++) a = PreviousInstruction(a, _physical);
             return a;
         }
 
-        int PreviousInstruction(int _address)
+        int PreviousInstruction(int _address, bool _physical)
         {
             const int RANGE = 24;
             int[] len = new int[RANGE];
-            for (int i = 0; i < RANGE; i++) len[i] = Length(_address - RANGE + i);
+            for (int i = 0; i < RANGE; i++) len[i] = Length(_address - RANGE + i, _physical);
             int[] votes = new int[RANGE];
             for (int s = 0; s < RANGE; s++)
             {
@@ -366,7 +430,7 @@ namespace Monitor
             }
             int best = RANGE - 1;            // nothing lands exactly: one byte back
             for (int i = 0; i < RANGE; i++) if (votes[i] > 0 && votes[i] >= votes[best]) best = i;
-            return (_address - RANGE + best) & 0xffff;
+            return Wrap(_address - RANGE + best, _physical);
         }
     }
 }
