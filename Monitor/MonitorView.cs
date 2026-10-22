@@ -240,7 +240,8 @@ namespace Monitor
             ImGui.TableSetupColumn("bytes", ImGuiTableColumnFlags.WidthFixed, ImGui.CalcTextSize("00 00 00 00 ").X);
             ImGui.TableSetupColumn("text", ImGuiTableColumnFlags.WidthStretch);
 
-            float bottom = ImGui.GetWindowPos().Y + ImGui.GetWindowHeight();
+            float bottom = ImGui.GetWindowPos().Y + ImGui.GetWindowHeight() - ImGui.GetStyle().WindowPadding.Y;
+            int fitted = 0;                 // instructions shown in full - tells the plugin where the bottom is
             foreach (DisasmLine l in s.Disasm)
             {
                 if (ImGui.GetCursorScreenPos().Y > bottom) break;
@@ -286,8 +287,10 @@ namespace Monitor
 
                 ImGui.TableSetColumnIndex(3);
                 ImGui.TextUnformatted(l.Text);
+                if (ImGui.GetItemRectMax().Y <= bottom) fitted++;
             }
             ImGui.EndTable();
+            Plugin.SetDisasmVisible(fitted);
         }
 
         // ****************************************************************************************

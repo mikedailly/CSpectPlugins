@@ -46,6 +46,8 @@ namespace Monitor
         /// <summary>Lines to scroll the disassembly by (+/-), applied on the emulator thread</summary>
         int DisasmScroll = 0;
         int DisasmLines = 40;
+        /// <summary>Instructions the UI actually fitted on screen last frame (labels take rows too), 0 = unknown</summary>
+        int DisasmVisible = 0;
 
         // ---- emulator thread state ----
         volatile MonitorSnapshot Latest;
@@ -135,9 +137,16 @@ namespace Monitor
 
         public void Break() { Queue(delegate { if (CSpect.Debugger(eDebugCommand.GetState) == 0) CSpect.Debugger(eDebugCommand.Enter); }); }
         public void Run() { Queue(delegate { CSpect.Debugger(eDebugCommand.Run); }); }
-        public void Step() { Queue(delegate { CSpect.Debugger(eDebugCommand.Step); StopCount++; }); }
-        public void StepOver() { Queue(delegate { CSpect.Debugger(eDebugCommand.StepOver); StopCount++; }); }
-        public void StepBack() { Queue(delegate { CSpect.Debugger(eDebugCommand.UnStep); StopCount++; }); }
+        public void Step() { Queue(delegate { CSpect.Debugger(eDebugCommand.Step); Stepped(); }); }
+        public void StepOver() { Queue(delegate { CSpect.Debugger(eDebugCommand.StepOver); Stepped(); }); }
+        public void StepBack() { Queue(delegate { CSpect.Debugger(eDebugCommand.UnStep); Stepped(); }); }
+
+        /// <summary>The CPU moved: highlight what changed, and make the disassembly show PC again</summary>
+        void Stepped()
+        {
+            StopCount++;
+            lock (Gate) { DisasmFollow = true; DisasmScroll = 0; }
+        }
         public void ClearAllBreakpoints() { Queue(delegate { CSpect.Debugger(eDebugCommand.ClearAllBreakpoints); TempBreakpoint = -1; }); }
 
         public void ToggleBreakpoint(int _address)
@@ -201,6 +210,8 @@ namespace Monitor
             }
         }
         public void SetDisasmLines(int _lines) { lock (Gate) DisasmLines = Math.Max(1, Math.Min(200, _lines)); }
+        /// <summary>How many instructions the UI managed to show in full</summary>
+        public void SetDisasmVisible(int _count) { lock (Gate) DisasmVisible = Math.Max(0, _count); }
         public bool IsFollowingPC { get { lock (Gate) return DisasmFollow; } }
 
 
@@ -224,7 +235,7 @@ namespace Monitor
             bool stopped = CSpect.Debugger(eDebugCommand.GetState) != 0;
             if (stopped && !WasStopped)
             {
-                StopCount++;
+                Stepped();
                 if (TempBreakpoint >= 0) { CSpect.Debugger(eDebugCommand.ClearBreakpoint, TempBreakpoint); TempBreakpoint = -1; }
             }
             WasStopped = stopped;
@@ -249,15 +260,10 @@ namespace Monitor
             for (int i = 0; i < 8; i++) s.Mmu[i] = CSpect.GetNextRegister((byte)(0x50 + i));
 
             // ---- disassembly ----
-            bool follow; int start, scroll, lines;
-            lock (Gate) { follow = DisasmFollow; start = DisasmStart; scroll = DisasmScroll; lines = DisasmLines; DisasmScroll = 0; }
+            bool follow; int start, scroll, lines, visible;
+            lock (Gate) { follow = DisasmFollow; start = DisasmStart; scroll = DisasmScroll; lines = DisasmLines; visible = DisasmVisible; DisasmScroll = 0; }
             int pc = s.Regs.PC;
-            if (follow)
-            {
-                // keep the view still while PC stays comfortably inside it, else put PC 4 lines down
-                if (LastStart >= 0 && InView(pc, LastStart, LastCount, lines - 4) && Latest != null) start = LastStart;
-                else start = BackLines(pc, Math.Min(4, lines / 3));
-            }
+            if (follow) start = FollowPC(pc, lines, visible);
             if (scroll > 0) for (int i = 0; i < scroll; i++) start = (start + Length(start)) & 0xffff;
             else if (scroll < 0) start = BackLines(start, -scroll);
             if (!follow) lock (Gate) { if (!DisasmFollow) DisasmStart = start; }
@@ -297,16 +303,33 @@ namespace Monitor
             return string.IsNullOrEmpty(l) ? null : l;
         }
 
-        /// <summary>Is _address one of the first _within instructions of the last view?</summary>
-        bool InView(int _address, int _start, int _count, int _within)
+        // ******************************************************************************************
+        /// <summary>
+        ///     Where the disassembly should start so PC is on screen:
+        ///     - PC still on screen (clear of the bottom few lines): don't move
+        ///     - PC just past the bottom: scroll down only as far as needed
+        ///     - anywhere else (a jump, call, return, or above the top): jump so PC is a few lines down
+        /// </summary>
+        // ******************************************************************************************
+        internal int FollowPC(int _pc, int _lines, int _visible)
         {
-            int a = _start;
-            for (int i = 0; i < Math.Min(_count, _within); i++)
+            int shown = _visible > 0 ? Math.Min(_visible, _lines) : Math.Max(1, _lines - 4);
+            int margin = Math.Max(0, Math.Min(3, (shown - 1) / 3));
+            if (LastStart < 0) return BackLines(_pc, margin);
+
+            // where is PC in the instructions from the current start? (look a little past the bottom too)
+            int index = -1, a = LastStart;
+            int[] starts = new int[shown + shown / 2 + 1];
+            for (int i = 0; i < starts.Length; i++)
             {
-                if (a == _address) return true;
+                starts[i] = a;
+                if (a == _pc) { index = i; break; }
                 a = (a + Length(a)) & 0xffff;
             }
-            return false;
+            if (index < 0) return BackLines(_pc, margin);                      // gone somewhere else: jump
+            int lastOk = shown - 1 - margin;                                    // lowest row PC may sit on
+            if (index <= lastOk) return LastStart;                              // still on screen
+            return starts[index - lastOk];                                      // scroll so PC sits on that row
         }
 
         int Length(int _address)
