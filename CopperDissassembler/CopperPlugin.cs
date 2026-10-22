@@ -81,6 +81,7 @@ namespace CopperDissassembler
             if (_id == 0)
             {
                 OpenCopperWindow = true;
+                return true;                // handled - CSpect clears the keyboard so the Next doesn't see the key press
             }
             else if (_id == 1)
             {
@@ -89,6 +90,7 @@ namespace CopperDissassembler
                 bool i = (bool)CSpect.GetGlobal(eGlobal.irq_wait);
                 CSpect.SetGlobal(eGlobal.copper_wait, !b);
                 CSpect.SetGlobal(eGlobal.irq_wait, !i);
+                return true;
             }
             return false;
         }

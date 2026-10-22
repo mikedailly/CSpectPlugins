@@ -72,6 +72,7 @@ namespace NextRegisterViewer
             if (_id == 0)
             {
                 OpenNextRegWindow = true;
+                return true;                // handled - CSpect clears the keyboard so the Next doesn't see the key press
             }
             return false;
         }
@@ -282,8 +283,7 @@ namespace NextRegisterViewer
             }
             w.OnClosed += Window_OnClosed;
             Window = w;
-            ReadRegisters();
-            Active = true;
+            Active = true;                  // registers are read on the emulator thread, in Tick()
         }
 
         // ******************************************************************************************
