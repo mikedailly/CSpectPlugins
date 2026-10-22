@@ -513,6 +513,30 @@ namespace Plugin
 
         // ------------------------------------------------------------
         /// <summary>
+        ///     Find a symbol by name (case insensitive)
+        /// </summary>
+        /// <param name="_name">Symbol name</param>
+        /// <returns>
+        ///     The symbol (value = 64k address, PhysicalAddress = physical address), or null if not found
+        /// </returns>
+        // ------------------------------------------------------------
+        Symbol FindSymbol(string _name);
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Find symbols whose names start with - then contain - some text (case insensitive),
+        ///     sorted by name. For auto-complete.
+        /// </summary>
+        /// <param name="_text">Text to look for</param>
+        /// <param name="_max">Most symbols to return</param>
+        /// <returns>
+        ///     The matching symbols (never null)
+        /// </returns>
+        // ------------------------------------------------------------
+        List<Symbol> FindSymbols(string _text, int _max);
+
+        // ------------------------------------------------------------
+        /// <summary>
         ///     Hex string to Int64 - will stop on an illegal character
         /// </summary>
         /// <param name="_hex">String to convert ($0000, 0x0000 or just 00000)</param>

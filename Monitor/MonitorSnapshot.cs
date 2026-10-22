@@ -56,6 +56,9 @@ namespace Monitor
         public const int StackBelow = 4, StackWords = 48;
         /// <summary>CSpect's own debugger screen hidden ("remote" mode)?</summary>
         public bool Remote;
+        /// <summary>Symbol auto-complete for each Goto box (MonitorPlugin.TargetDisasm/TargetMemory): the text, and what matched</summary>
+        public string[] SymbolQuery = new string[2];
+        public SymbolMatch[][] SymbolMatches = new SymbolMatch[2][];
         /// <summary>Physical memory the memory pane asked for (PhysMemory[0] is at PhysStart), or null</summary>
         public byte[] PhysMemory;
         public int PhysStart;
@@ -78,11 +81,39 @@ namespace Monitor
 
     // *********************************************************************************************************
     /// <summary>
+    ///     A symbol offered by a Goto box, already resolved to where it is now
+    /// </summary>
+    // *********************************************************************************************************
+    public sealed class SymbolMatch
+    {
+        public string Name;
+        public int Address;
+        public bool Physical;
+    }
+
+    // *********************************************************************************************************
+    /// <summary>
+    ///     The result of a symbol Goto (resolved on the emulator thread)
+    /// </summary>
+    // *********************************************************************************************************
+    public sealed class GotoResult
+    {
+        /// <summary>Goes up by one for every Goto, so the UI knows it's new</summary>
+        public int Sequence;
+        public int Address;
+        public bool Physical;
+        /// <summary>null if it worked, else why not</summary>
+        public string Error;
+    }
+
+    // *********************************************************************************************************
+    /// <summary>
     ///     Addresses as typed and shown:
     ///         $8000       hex (a leading $), else decimal: 32768
     ///         10:$0000    bank:offset - a physical address, 8K banks (bank * 8192 + offset), either part hex or decimal
     ///     Plain numbers up to 65535 are the CPU's 64k view; above that (or bank:offset) are physical memory,
     ///     which is shown as bank:offset.
+    ///     Anything else is taken as a symbol name, optionally +/- an offset: main_loop, buffer+$20, table-2
     /// </summary>
     // *********************************************************************************************************
     public static class MonitorAddress
@@ -110,6 +141,22 @@ namespace Monitor
             if (!TryNumber(t, out v) || v < 0 || v >= PhysicalSize) return false;
             _address = v; _physical = v > 0xffff;
             return true;
+        }
+
+        /// <summary>Split "name+offset" / "name-offset" (offset $hex or decimal). False if it can't be a symbol.</summary>
+        public static bool TrySplitSymbol(string _text, out string _name, out int _offset)
+        {
+            _name = null; _offset = 0;
+            string t = (_text ?? "").Trim();
+            if (t.Length == 0 || char.IsDigit(t[0]) || t[0] == '$' || t[0] == '-' || t[0] == '+' || t.IndexOf(':') >= 0) return false;
+            int op = -1;
+            for (int i = 1; i < t.Length; i++) if (t[i] == '+' || t[i] == '-') { op = i; break; }
+            if (op < 0) { _name = t; return true; }
+            int off;
+            if (!TryNumber(t.Substring(op + 1), out off)) return false;
+            _name = t.Substring(0, op).Trim();
+            _offset = t[op] == '-' ? -off : off;
+            return _name.Length > 0;
         }
 
         /// <summary>$hex (or 0xhex), otherwise decimal</summary>

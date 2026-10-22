@@ -45,6 +45,15 @@ namespace Monitor
         int DisasmStart = 0;
         /// <summary>Disassembly shows physical memory (DisasmStart is physical)</summary>
         bool DisasmPhysical = false;
+        /// <summary>Goto boxes</summary>
+        public const int TargetDisasm = 0, TargetMemory = 1;
+        readonly GotoResult[] GotoResults = new GotoResult[2];
+        int GotoSequence;
+        /// <summary>Symbol auto-complete: what each Goto box has typed (null = closed), and the cached answer</summary>
+        readonly string[] SymbolQuery = new string[2];
+        readonly string[] CachedQuery = new string[2];
+        readonly SymbolMatch[][] CachedMatches = new SymbolMatch[2][];
+        const int MAX_MATCHES = 12;
         /// <summary>Physical memory the memory pane wants (count 0 = none)</summary>
         int PhysWantStart = 0, PhysWantCount = 0;
         /// <summary>Lines to scroll the disassembly by (+/-), applied on the emulator thread</summary>
@@ -150,6 +159,7 @@ namespace Monitor
         {
             StopCount++;
             lock (Gate) { DisasmFollow = true; DisasmPhysical = false; DisasmScroll = 0; }
+            CachedQuery[0] = CachedQuery[1] = null;     // banks may have changed: re-resolve symbol suggestions
         }
         public void ClearAllBreakpoints() { Queue(delegate { CSpect.Debugger(eDebugCommand.ClearAllBreakpoints); TempBreakpoint = -1; }); }
 
@@ -210,6 +220,99 @@ namespace Monitor
         {
             if (_physical) { int a = Wrap(_address, true); Queue(delegate { CSpect.PokePhysical(a, _value); }); }
             else Queue(delegate { CSpect.Poke((ushort)(_address & 0xffff), _value); });
+        }
+
+        // ******************************************************************************************
+        /// <summary>
+        ///     Goto a symbol (name, name+offset, name-offset) in the disassembly or memory pane.
+        ///     Resolved on the emulator thread; the answer appears in LastGoto(_target).
+        /// </summary>
+        // ******************************************************************************************
+        public void GotoSymbol(string _text, int _target)
+        {
+            Queue(delegate
+            {
+                var r = new GotoResult { Sequence = ++GotoSequence };
+                string name; int offset, a; bool phys;
+                if (!MonitorAddress.TrySplitSymbol(_text, out name, out offset)) r.Error = "Not an address or symbol";
+                else if (!ResolveSymbol(name, out a, out phys)) r.Error = "Unknown symbol '" + name + "'";
+                else
+                {
+                    r.Physical = phys;
+                    r.Address = Wrap(a + offset, phys);
+                    if (_target == TargetDisasm) lock (Gate) { DisasmFollow = false; DisasmPhysical = phys; DisasmStart = r.Address; DisasmScroll = 0; }
+                }
+                GotoResults[_target] = r;
+            });
+        }
+
+        /// <summary>The last symbol Goto for a box (null if none yet)</summary>
+        public GotoResult LastGoto(int _target) { return GotoResults[_target]; }
+
+        /// <summary>What a Goto box has typed so far, for auto-complete (null/empty to stop)</summary>
+        public void SetSymbolQuery(int _target, string _text) { lock (Gate) SymbolQuery[_target] = _text; }
+
+        // ******************************************************************************************
+        /// <summary>
+        ///     Where a symbol is right now (emulator thread): its 64k address if that's what the CPU
+        ///     sees there (bank paged in, ROM, or an equate), else its physical address
+        /// </summary>
+        // ******************************************************************************************
+        bool ResolveSymbol(string _name, out int _address, out bool _physical)
+        {
+            _address = 0; _physical = false;
+            Symbol sym;
+            try { sym = CSpect.FindSymbol(_name); }
+            catch (Exception) { return false; }                 // older CSpect without symbol lookup
+            if (sym == null) return false;
+            Resolve(sym, out _address, out _physical);
+            return true;
+        }
+
+        void Resolve(Symbol _sym, out int _address, out bool _physical)
+        {
+            int phys = _sym.PhysicalAddress;
+            if (_sym.type == eLabelType.Address && phys >= 0 && phys < MonitorAddress.PhysicalSize && _sym.value >= 0 && _sym.value <= 0xffff)
+            {
+                // what's at that 64k address now? (CSpect's own mapping: ROM is banks 0/1)
+                int slot = (_sym.value >> 13) & 7;
+                int bank = CSpect.GetNextRegister((byte)(0x50 + slot));
+                if (bank == 0xff) bank = (_sym.value >> 13) & 1;
+                int now = (bank << 13) | (_sym.value & 0x1fff);
+                if (now != phys) { _address = phys; _physical = true; return; }
+            }
+            _physical = _sym.value > 0xffff;
+            _address = Wrap(_sym.value, _physical);
+        }
+
+        /// <summary>Auto-complete for the Goto boxes (emulator thread, only when the text changes)</summary>
+        void UpdateSymbolMatches(MonitorSnapshot _s)
+        {
+            for (int t = 0; t < 2; t++)
+            {
+                string q;
+                lock (Gate) q = SymbolQuery[t];
+                string name; int offset;
+                if (string.IsNullOrEmpty(q) || !MonitorAddress.TrySplitSymbol(q, out name, out offset)) { CachedQuery[t] = null; CachedMatches[t] = null; continue; }
+                if (q != CachedQuery[t])
+                {
+                    var list = new List<SymbolMatch>();
+                    try
+                    {
+                        foreach (Symbol sym in CSpect.FindSymbols(name, MAX_MATCHES))
+                        {
+                            int a; bool phys;
+                            Resolve(sym, out a, out phys);
+                            list.Add(new SymbolMatch { Name = sym.name, Address = a, Physical = phys });
+                        }
+                    }
+                    catch (Exception) { }                       // older CSpect without symbol lookup
+                    CachedQuery[t] = q;
+                    CachedMatches[t] = list.ToArray();
+                }
+                _s.SymbolQuery[t] = CachedQuery[t];
+                _s.SymbolMatches[t] = CachedMatches[t];
+            }
         }
 
         /// <summary>The memory pane is showing physical memory from _start: read _count bytes there each frame (0 = stop)</summary>
@@ -340,6 +443,8 @@ namespace Monitor
             s.Disasm = dis;
             // FollowPC works in the 64k view
             if (phys) LastStart = -1; else { LastStart = start; LastCount = lines; }
+
+            UpdateSymbolMatches(s);
 
             if (physCount > 0)
             {

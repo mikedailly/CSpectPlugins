@@ -48,8 +48,21 @@ namespace Monitor
         byte[] PrevMemory;
         int ShownStopCount = -1;
 
-        string DisasmGotoText = "";
-        string MemGotoText = "";
+        /// <summary>The two Goto boxes (disassembly, memory)</summary>
+        readonly GotoBox[] Boxes = { new GotoBox(), new GotoBox() };
+        static readonly Vector4 ColError = new Vector4(1.0f, 0.35f, 0.35f, 1.0f);
+
+        sealed class GotoBox
+        {
+            public string Text = "";
+            /// <summary>Highlighted suggestion (arrow keys), -1 = none</summary>
+            public int Selected = -1;
+            /// <summary>Mouse over the suggestion list last frame (keeps it open while clicking)</summary>
+            public bool ListHovered;
+            public int SeenSequence;
+            public string Error;
+            public double ErrorTime;
+        }
         int MemFollow = 0;
         int MemFollowLast = -1;
         int MemScrollTo = -1;
@@ -222,7 +235,7 @@ namespace Monitor
             ImGui.AlignTextToFramePadding();
             ImGui.TextUnformatted("Goto");
             ImGui.SameLine();
-            if (AddressInput("##disgoto", ref DisasmGotoText)) { int a; bool phys; if (MonitorAddress.TryParse(DisasmGotoText, out a, out phys)) Plugin.DisasmGoto(a, phys); }
+            DrawGotoBox(s, MonitorPlugin.TargetDisasm);
             ImGui.SameLine();
             bool follow = Plugin.IsFollowingPC;
             ImGui.BeginDisabled(follow);
@@ -457,11 +470,7 @@ namespace Monitor
             ImGui.AlignTextToFramePadding();
             ImGui.TextUnformatted("Goto");
             ImGui.SameLine();
-            if (AddressInput("##memgoto", ref MemGotoText))
-            {
-                int a; bool isPhys;
-                if (MonitorAddress.TryParse(MemGotoText, out a, out isPhys)) { MemPhysical = isPhys; MemScrollTo = a; MemFollow = 0; }
-            }
+            DrawGotoBox(s, MonitorPlugin.TargetMemory);
             ImGui.SameLine(0, 16);
             int space = MemPhysical ? 1 : 0;
             ImGui.SetNextItemWidth(90);
@@ -590,13 +599,115 @@ namespace Monitor
             return p >= 0 ? " (" + MonitorAddress.Format(p, true) + ")" : " (ROM)";
         }
 
-        /// <summary>Address entry: $hex, decimal, or bank:offset</summary>
-        static bool AddressInput(string _id, ref string _text)
+        // ****************************************************************************************
+        //  Goto box: $hex, decimal, bank:offset, or a symbol (name, name+offset, name-offset).
+        //  Typing a name lists matching symbols underneath (click one, or arrow keys + Enter).
+        //  Numbers are handled here; symbols are resolved by the plugin on the emulator thread.
+        // ****************************************************************************************
+        void DrawGotoBox(MonitorSnapshot s, int _target)
         {
-            ImGui.SetNextItemWidth(90);
-            bool done = ImGui.InputText(_id, ref _text, 16, ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.AutoSelectAll | ImGuiInputTextFlags.CharsNoBlank);
-            if (ImGui.IsItemHovered()) ImGui.SetTooltip("$8000 hex, 32768 decimal, or bank:offset for physical memory\n(8K banks, e.g. 10:$0000 or 10:0)");
-            return done;
+            GotoBox b = Boxes[_target];
+            ImGui.SetNextItemWidth(130);
+            bool enter = ImGui.InputText("##goto" + _target, ref b.Text, 64, ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.AutoSelectAll | ImGuiInputTextFlags.CharsNoBlank);
+            // Enter deactivates the box in the same frame - it still counts as typing in it here
+            bool active = ImGui.IsItemActive() || enter;
+            if (ImGui.IsItemEdited()) { b.Selected = -1; b.Error = null; }
+            if (ImGui.IsItemHovered() && !active)
+                ImGui.SetTooltip("$8000 hex, 32768 decimal, bank:offset for physical memory (8K banks, e.g. 10:$0000),\nor a symbol: main_loop, buffer+$20, table-2");
+            Vector2 boxMin = ImGui.GetItemRectMin(), boxMax = ImGui.GetItemRectMax();
+
+            string name; int offset;
+            bool symbolish = MonitorAddress.TrySplitSymbol(b.Text, out name, out offset);
+            bool wanted = (active || b.ListHovered) && symbolish;
+            Plugin.SetSymbolQuery(_target, wanted ? b.Text : null);
+            SymbolMatch[] matches = (wanted && s.SymbolQuery[_target] == b.Text) ? s.SymbolMatches[_target] : null;
+            bool open = matches != null && matches.Length > 0;
+
+            if (open && active)
+            {
+                if (ImGui.IsKeyPressed(ImGuiKey.DownArrow)) b.Selected = Math.Min(b.Selected + 1, matches.Length - 1);
+                if (ImGui.IsKeyPressed(ImGuiKey.UpArrow)) b.Selected = Math.Max(b.Selected - 1, -1);
+            }
+            if (enter)
+            {
+                if (open && b.Selected >= 0 && b.Selected < matches.Length) PickSymbol(_target, b, matches[b.Selected], name);
+                else Go(_target, b.Text);
+                b.Selected = -1;
+            }
+
+            // a symbol Goto came back from the emulator thread
+            GotoResult r = Plugin.LastGoto(_target);
+            if (r != null && r.Sequence != b.SeenSequence)
+            {
+                b.SeenSequence = r.Sequence;
+                if (r.Error != null) { b.Error = r.Error; b.ErrorTime = ImGui.GetTime(); }
+                else { b.Error = null; ShowAddress(_target, r.Address, r.Physical, true); }
+            }
+
+            if (open)
+            {
+                ImGui.SetNextWindowPos(new Vector2(boxMin.X, boxMax.Y + 2));
+                ImGui.SetNextWindowBgAlpha(1.0f);
+                ImGuiWindowFlags lf = ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoSavedSettings |
+                                      ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoFocusOnAppearing | ImGuiWindowFlags.NoNav;
+                bool keep = false;
+                if (ImGui.Begin("##symbols" + _target, lf))
+                {
+                    keep = ImGui.IsWindowHovered();
+                    for (int i = 0; i < matches.Length; i++)
+                    {
+                        SymbolMatch m = matches[i];
+                        if (ImGui.Selectable(m.Name + "##sym" + i, i == b.Selected, ImGuiSelectableFlags.None, new Vector2(200, 0)))
+                        {
+                            PickSymbol(_target, b, m, name);
+                            keep = false;
+                        }
+                        ImGui.SameLine(210);
+                        ImGui.TextColored(ColDim, MonitorAddress.Format(m.Address, m.Physical));
+                    }
+                }
+                ImGui.End();
+                b.ListHovered = keep;
+            }
+            else b.ListHovered = false;
+
+            if (b.Error != null && ImGui.GetTime() - b.ErrorTime < 4.0)
+            {
+                ImGui.SetNextWindowPos(new Vector2(boxMin.X, boxMax.Y + 2));
+                ImGui.SetNextWindowBgAlpha(1.0f);
+                if (ImGui.Begin("##gotoerr" + _target, ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoSavedSettings |
+                                ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoFocusOnAppearing | ImGuiWindowFlags.NoNav | ImGuiWindowFlags.NoInputs))
+                    ImGui.TextColored(ColError, b.Error);
+                ImGui.End();
+            }
+        }
+
+        /// <summary>Goto whatever was typed: numbers right away, symbols via the plugin</summary>
+        void Go(int _target, string _text)
+        {
+            int a; bool phys;
+            if (MonitorAddress.TryParse(_text, out a, out phys)) { Boxes[_target].Error = null; ShowAddress(_target, a, phys, false); }
+            else Plugin.GotoSymbol(_text, _target);
+        }
+
+        /// <summary>A suggestion was chosen: keep any +/- offset that was typed after the name</summary>
+        void PickSymbol(int _target, GotoBox _b, SymbolMatch _m, string _typedName)
+        {
+            string t = _b.Text.Trim();
+            string suffix = (_typedName != null && t.Length > _typedName.Length) ? t.Substring(_typedName.Length) : "";
+            string dummy; int offset;
+            MonitorAddress.TrySplitSymbol(t, out dummy, out offset);
+            _b.Text = _m.Name + suffix;
+            _b.Error = null;
+            int a = _m.Address + offset;
+            if (_m.Physical) { a %= MonitorAddress.PhysicalSize; if (a < 0) a += MonitorAddress.PhysicalSize; } else a &= 0xffff;
+            ShowAddress(_target, a, _m.Physical, false);
+        }
+
+        void ShowAddress(int _target, int _address, bool _physical, bool _pluginDidDisasm)
+        {
+            if (_target == MonitorPlugin.TargetDisasm) { if (!_pluginDidDisasm) Plugin.DisasmGoto(_address, _physical); }
+            else { MemPhysical = _physical; MemScrollTo = _address; MemFollow = 0; }
         }
 
         static int FollowValue(Z80Regs r, int _which)
