@@ -69,6 +69,33 @@ namespace Plugin
         // ******************************************************************************************
         bool SetImGuiDraw(Action _draw);
 
+        // ******************************************************************************************
+        /// <summary>
+        ///     Create a texture for ImGui.Image() / ImDrawList.AddImage() in this window's ImGui draw.
+        ///     Freed automatically when the window closes. Call from the main thread (OSTick or the draw callback).
+        /// </summary>
+        /// <param name="_width">Texture width in pixels</param>
+        /// <param name="_height">Texture height in pixels</param>
+        /// <returns>ImGui texture ID, or IntPtr.Zero if ImGui isn't available</returns>
+        // ******************************************************************************************
+        IntPtr CreateImGuiTexture(int _width, int _height);
+
+        // ******************************************************************************************
+        /// <summary>
+        ///     Upload new pixels to a texture made by CreateImGuiTexture() (main thread only)
+        /// </summary>
+        /// <param name="_texture">Texture ID</param>
+        /// <param name="_argb">width*height pixels, 0xAARRGGBB - the same format as Screen[]</param>
+        // ******************************************************************************************
+        void UpdateImGuiTexture(IntPtr _texture, UInt32[] _argb);
+
+        // ******************************************************************************************
+        /// <summary>
+        ///     Free a texture made by CreateImGuiTexture()
+        /// </summary>
+        // ******************************************************************************************
+        void DestroyImGuiTexture(IntPtr _texture);
+
 
     }
 }

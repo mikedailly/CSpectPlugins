@@ -1,49 +1,45 @@
-﻿using Plugin;
+﻿// ********************************************************************************************************************************************
+//      CSpect Memory Viewer extension
+//      Written by:
+//                  Mike Dailly
+//
+//      contributions by:
+//
+//      Released under the GNU 3 license - please see license file for more details
+//
+//      <ctrl><alt>d opens the memory viewer in its own OS window (iCSpect.OpenWindow) drawn with Dear ImGui
+//      (iWindow.SetImGuiDraw) - no WinForms.
+//
+// ********************************************************************************************************************************************
+using Plugin;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Drawing;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows.Forms;
-using static System.Windows.Forms.VisualStyles.VisualStyleElement.Button;
 
 namespace MemoryViewer
 {
-    class WindowWrapper : IWin32Window
-    {
-        private IntPtr mWindowHandle;
-        public IntPtr Handle
-        {
-            get { return mWindowHandle; }
-        }
-
-        public WindowWrapper(IntPtr _handle)
-        {
-            mWindowHandle = _handle;
-        }
-    }
-
     // *********************************************************************************************************
     /// <summary>
-    ///     The Sprite Viewer
+    ///     The Memory Viewer
     /// </summary>
     // *********************************************************************************************************
     public class MemoryViewerPlugin : iPlugin
     {
         /// <summary>CSpect emulator interface</summary>
         public iCSpect CSpect;
-        public static bool Active;
-        public static MemoryViewerForm form;
+        /// <summary>Is the viewer window open?</summary>
+        public static volatile bool Active;
 
-        bool doinvalidate = false;
-        public bool OpenMemViewerWindow = false;
-        public int PaletteNumber = 0;
+        public volatile bool OpenMemViewerWindow = false;
+        /// <summary>Palette the viewer draws with (copied in Tick)</summary>
+        public volatile int PaletteNumber = 0;
 
+        /// <summary>Single frame step state machine: 2 = unpause, 1 = pause again, 0 = idle</summary>
         public int DoStep = 0;
 
-        WindowWrapper hwndWrapper;
+        /// <summary>Our window (null when closed)</summary>
+        iWindow Window;
+        /// <summary>The viewer UI (kept between openings so settings persist)</summary>
+        MemoryViewerView View;
 
 
         // *********************************************************************************************************
@@ -60,13 +56,11 @@ namespace MemoryViewer
             Console.WriteLine(" Memory Viewer added");
 
             CSpect = _CSpect;
-            IntPtr handle = (IntPtr)CSpect.GetGlobal(eGlobal.window_handle);
-            hwndWrapper = new WindowWrapper(handle);
 
             PaletteNumber = 1;
             ZXPalette.Init();
 
-            // Detect keypress for starting disassembler
+            // Detect keypress for starting the viewer
             List<sIO> ports = new List<sIO>();
             ports.Add(new sIO("<ctrl><alt>d", eAccess.KeyPress, 0));                   // Key press callback
             return ports;
@@ -76,8 +70,6 @@ namespace MemoryViewer
         /// <summary>
         ///     Key pressed callback.
         /// </summary>
-        /// <param name="_id"></param>
-        /// <returns></returns>
         // ******************************************************************************************
         public bool KeyPressed(int _id)
         {
@@ -96,16 +88,19 @@ namespace MemoryViewer
         // ******************************************************************************************
         public void Quit()
         {
+            Active = false;
+            if (Window != null)
+            {
+                iWindow w = Window;
+                Window = null;
+                w.Close();
+            }
         }
 
         // ******************************************************************************************
         /// <summary>
         ///     Read access type - not used
         /// </summary>
-        /// <param name="_type"></param>
-        /// <param name="_address"></param>
-        /// <param name="_isvalid"></param>
-        /// <returns></returns>
         // ******************************************************************************************
         public byte Read(eAccess _type, int _address, int _id, out bool _isvalid)
         {
@@ -124,63 +119,32 @@ namespace MemoryViewer
 
         // ******************************************************************************************
         /// <summary>
-        ///     Called once an emulator frame - update sprite data if "Active"
+        ///     Called once an emulator frame - copy the selected palette if "Active"
         /// </summary>
         // ******************************************************************************************
         public void Tick()
         {
             if (!Active) return;
 
-            for (int i = -0; i < 256; i++)
+            int pal = PaletteNumber;
+            for (int i = 0; i < 256; i++)
             {
-                uint col = CSpect.GetColour(PaletteNumber, i);
-                ZXPalette.Palette1[i] = col;
+                ZXPalette.Palette1[i] = CSpect.GetColour(pal, i);
             }
-
-
-            /*
-            for (int i = 0; i < 128; i++)
-            {
-                SpriteData[i] = CSpect.GetSprite(i);
-            }
-
-            SpriteMemory = CSpect.PeekSprite(0, 16384, SpriteMemory);
-
-            bool isEqual = Enumerable.SequenceEqual(SpriteMemory, LastSpriteMemory);
-            if (!isEqual)
-            {
-                doinvalidate = true;
-                update_sprite_shapes = true;
-
-                for (int i = -0; i < 256; i++) {
-                    uint col = CSpect.GetColour(2, i);
-                    ZXPalette.SpritePalette1[i] = col;
-                }
-            }
-
-            // remember last set
-            Array.Copy(SpriteMemory,LastSpriteMemory,16384);            
-            */
         }
 
 
         // ******************************************************************************************
         /// <summary>
-        ///     Called once an OS emulator frame - do all UI rendering, opening windows etc here.
+        ///     Called once an OS frame - open the window, and run the single frame "step"
         /// </summary>
         // ******************************************************************************************
         public void OSTick()
         {
             if (OpenMemViewerWindow)
             {
-                if (!Active)
-                {
-                    Active = true;
-                    doinvalidate = true;
-                    form = new MemoryViewerForm(this);
-                    form.Show();
-                }
                 OpenMemViewerWindow = false;
+                if (Window == null) OpenWindow();
             }
 
             if (DoStep == 2)
@@ -193,61 +157,46 @@ namespace MemoryViewer
                 CSpect.SetGlobal(eGlobal.pause, true);
                 DoStep = 0;
             }
+        }
 
-            if (form != null)
+        // ******************************************************************************************
+        /// <summary>
+        ///     Open our window and hook up the ImGui view
+        /// </summary>
+        // ******************************************************************************************
+        void OpenWindow()
+        {
+            iWindow w = CSpect.OpenWindow("Memory Viewer", 840, 680);
+            if (w == null) return;
+            if (View == null) View = new MemoryViewerView(this);
+            if (!w.SetImGuiDraw(View.Draw))
             {
-                // Set Pause/Result button text
-                if ((bool)CSpect.GetGlobal(eGlobal.pause))
-                {
-                    if (form.PauseButton.Text != "Resume")
-                    {
-                        form.PauseButton.Text = "Resume";
-                    }
-                }
-                else
-                {
-                    if (form.PauseButton.Text != "Pause")
-                    {
-                        form.PauseButton.Text = "Pause";
-                    }
-                }
-
-
-                // Enable/Disable "Step" button
-                if ((bool)CSpect.GetGlobal(eGlobal.pause) == true)
-                {
-                    if (form.StepButton.Enabled == false)
-                    {
-                        form.StepButton.Enabled = true;
-                    }
-                }
-                else
-                {
-                    if (form.StepButton.Enabled == true)
-                    {
-                        form.StepButton.Enabled = false;
-                    }
-                }
+                Console.WriteLine(" Memory Viewer: Dear ImGui not available on this system");
+                w.Close();
+                return;
             }
+            View.Attach(w);
+            w.OnClosed += Window_OnClosed;
+            Window = w;
+            Active = true;
+        }
 
-
-            //doinvalidate = true;
-            if (form != null && (form.RealtimeCheckbox.Checked || form.DoSnapshot))
-            {
-                form.DoSnapshot = false;
-                form.Invalidate();              // refresh IF it's changed
-                doinvalidate = false;
-            }
+        // ******************************************************************************************
+        /// <summary>
+        ///     Our window was closed (by the user, or Quit) - its textures went with it
+        /// </summary>
+        // ******************************************************************************************
+        private void Window_OnClosed(object sender, EventArgs e)
+        {
+            Active = false;
+            Window = null;
+            if (View != null) View.Detach();
         }
 
         // ******************************************************************************************
         /// <summary>
         ///     Write access type - not used
         /// </summary>
-        /// <param name="_type"></param>
-        /// <param name="_port"></param>
-        /// <param name="_value"></param>
-        /// <returns></returns>
         // ******************************************************************************************
         public bool Write(eAccess _type, int _port, int _id, byte _value)
         {
@@ -255,4 +204,3 @@ namespace MemoryViewer
         }
     }
 }
-
