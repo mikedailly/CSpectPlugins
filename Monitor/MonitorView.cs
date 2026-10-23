@@ -28,6 +28,7 @@ namespace Monitor
         static readonly Vector4 ColFlagOff = new Vector4(0.13f, 0.15f, 0.19f, 1.0f);
         static readonly Vector4 ColNormal = new Vector4(1.0f, 1.0f, 1.0f, 1.0f);
         static readonly Vector4 ColHex = new Vector4(1.00f, 0.88f, 0.35f, 1.0f);
+        static readonly Vector4 ColUserBar = new Vector4(0.60f, 0.95f, 0.60f, 0.45f);     // pale green
         static readonly Vector4 ColStopped = new Vector4(1.00f, 0.75f, 0.30f, 1.0f);
 
         const float SPLIT = 6.0f;               // splitter bar thickness
@@ -235,6 +236,70 @@ namespace Monitor
 
         static string Crop(string _text, int _chars) { return _text.Length > _chars ? _text.Substring(0, _chars) : _text; }
 
+        // ---- user bar: a pale green line moved with the cursor keys (or by clicking), scrolling the view at the edges ----
+        int BarAddress = -1;
+        bool BarPhysical;
+        /// <summary>After asking the plugin to scroll: put the bar on this row of the next snapshot (-1 = nothing pending)</summary>
+        int BarWantRow = -1;
+        MonitorSnapshot BarRequestSnapshot;
+        /// <summary>Instructions shown in full last frame</summary>
+        int LastFitted = 1;
+
+        int BarIndex(MonitorSnapshot s)
+        {
+            for (int i = 0; i < s.Disasm.Length && i < LastFitted; i++)
+                if (s.Disasm[i].Address == BarAddress && s.Disasm[i].Physical == BarPhysical) return i;
+            return -1;
+        }
+
+        void PutBar(DisasmLine _l) { BarAddress = _l.Address; BarPhysical = _l.Physical; }
+
+        /// <summary>Scroll by _lines and put the bar on _row once the scrolled view arrives</summary>
+        void ScrollWithBar(MonitorSnapshot s, int _lines, int _row)
+        {
+            Plugin.DisasmScrollBy(_lines);
+            BarWantRow = Math.Max(0, _row);
+            BarRequestSnapshot = s;
+        }
+
+        // ****************************************************************************************
+        /// <summary>
+        ///     Cursor keys move the user bar while the disassembly has focus: Up/Down a line, Page Up/Down a screen;
+        ///     past the top or bottom the view scrolls. The keys are kept from the emulator meanwhile.
+        /// </summary>
+        // ****************************************************************************************
+        void UserBarKeys(MonitorSnapshot s)
+        {
+            // the scroll we asked for has arrived: place the bar
+            if (BarWantRow >= 0 && s != BarRequestSnapshot && s.Disasm.Length > 0)
+            {
+                PutBar(s.Disasm[Math.Min(BarWantRow, s.Disasm.Length - 1)]);
+                BarWantRow = -1;
+            }
+            if (!ImGui.IsWindowFocused(ImGuiFocusedFlags.ChildWindows) || ImGui.IsAnyItemActive() || s.Disasm.Length == 0) return;
+            ImGui.SetNextFrameWantCaptureKeyboard(true);            // don't pass the keys on to the emulator
+
+            bool up = ImGui.IsKeyPressed(ImGuiKey.UpArrow), down = ImGui.IsKeyPressed(ImGuiKey.DownArrow);
+            bool pgUp = ImGui.IsKeyPressed(ImGuiKey.PageUp), pgDown = ImGui.IsKeyPressed(ImGuiKey.PageDown);
+            if (!(up || down || pgUp || pgDown) || BarWantRow >= 0) return;
+
+            int shown = Math.Max(1, Math.Min(LastFitted, s.Disasm.Length));
+            int i = BarIndex(s);
+            if (i < 0)
+            {
+                // no bar on screen yet: start on PC if it's showing, else the top line
+                int start = 0;
+                for (int k = 0; k < shown; k++) if (!s.Disasm[k].Physical && s.Disasm[k].Address == s.Regs.PC) start = k;
+                PutBar(s.Disasm[start]);
+                return;
+            }
+            int page = Math.Max(1, shown - 1);
+            if (up) { if (i > 0) PutBar(s.Disasm[i - 1]); else ScrollWithBar(s, -1, 0); }
+            else if (down) { if (i < shown - 1) PutBar(s.Disasm[i + 1]); else ScrollWithBar(s, 1, shown - 1); }
+            else if (pgUp) ScrollWithBar(s, -page, i);
+            else if (pgDown) ScrollWithBar(s, page, i);
+        }
+
         /// <summary>Show labels in place of addresses and bytes (the "Symbols" tick box)</summary>
         internal bool ShowSymbols = true;
 
@@ -291,6 +356,8 @@ namespace Monitor
             }
             ImGui.TableSetupColumn("text", ImGuiTableColumnFlags.WidthStretch);
 
+            UserBarKeys(s);
+
             float bottom = ImGui.GetWindowPos().Y + ImGui.GetWindowHeight() - ImGui.GetStyle().WindowPadding.Y;
             int fitted = 0;                 // instructions shown in full - tells the plugin where the bottom is
             foreach (DisasmLine l in s.Disasm)
@@ -309,12 +376,14 @@ namespace Monitor
                 string id = (l.Physical ? "p" : "l") + l.Address;
                 ImGui.TableNextRow();
                 if (s.Stopped && logical == s.Regs.PC) ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(ColPCRow));
+                if (l.Address == BarAddress && l.Physical == BarPhysical) ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg1, ImGui.GetColorU32(ColUserBar));
 
                 ImGui.TableSetColumnIndex(1);
                 string where = MonitorAddress.Format(l.Address, l.Physical);
                 if (sym) ImGui.PushStyleColor(ImGuiCol.Text, ColLabel);
-                ImGui.Selectable((sym ? (l.Label != null ? Crop(LabelText(l.Label), SYMBOL_CHARS) : "") : where) + "##dl" + id, false,
-                                 ImGuiSelectableFlags.SpanAllColumns | ImGuiSelectableFlags.AllowOverlap | ImGuiSelectableFlags.AllowDoubleClick);
+                if (ImGui.Selectable((sym ? (l.Label != null ? Crop(LabelText(l.Label), SYMBOL_CHARS) : "") : where) + "##dl" + id, false,
+                                 ImGuiSelectableFlags.SpanAllColumns | ImGuiSelectableFlags.AllowOverlap | ImGuiSelectableFlags.AllowDoubleClick))
+                    PutBar(l);                      // click a line: the user bar goes there
                 if (sym) ImGui.PopStyleColor();
                 // double click a line to set/clear a breakpoint on it
                 if (ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)) Plugin.ToggleBreakpoint(l.Address, l.Physical);
@@ -356,6 +425,7 @@ namespace Monitor
             }
             ImGui.EndTable();
             Plugin.SetDisasmVisible(fitted);
+            LastFitted = Math.Max(1, fitted);
         }
 
         /// <summary>Z80 register and condition names - everything else in an operand that's a word is a label</summary>
