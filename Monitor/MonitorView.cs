@@ -265,7 +265,8 @@ namespace Monitor
         // ****************************************************************************************
         /// <summary>
         ///     Cursor keys move the user bar while the disassembly has focus: Up/Down a line, Page Up/Down a screen;
-        ///     past the top or bottom the view scrolls. The keys are kept from the emulator meanwhile.
+        ///     past the top or bottom the view scrolls. Shift+Enter sets PC to the bar.
+        ///     The keys are kept from the emulator meanwhile.
         /// </summary>
         // ****************************************************************************************
         void UserBarKeys(MonitorSnapshot s)
@@ -278,6 +279,19 @@ namespace Monitor
             }
             if (!ImGui.IsWindowFocused(ImGuiFocusedFlags.ChildWindows) || ImGui.IsAnyItemActive() || s.Disasm.Length == 0) return;
             ImGui.SetNextFrameWantCaptureKeyboard(true);            // don't pass the keys on to the emulator
+
+            // Shift+Enter: set PC to the user bar (stopped only; a physical line needs its bank paged in)
+            if (ImGui.GetIO().KeyShift && (ImGui.IsKeyPressed(ImGuiKey.Enter, false) || ImGui.IsKeyPressed(ImGuiKey.KeypadEnter, false)))
+            {
+                int bi = BarIndex(s);
+                if (bi >= 0 && s.Stopped)
+                {
+                    DisasmLine l = s.Disasm[bi];
+                    int pc = l.Physical ? s.ToLogical(l.Address) : l.Address;
+                    if (pc >= 0) Plugin.SetRegisters(r => r.PC = (ushort)pc);
+                }
+                return;
+            }
 
             bool up = ImGui.IsKeyPressed(ImGuiKey.UpArrow), down = ImGui.IsKeyPressed(ImGuiKey.DownArrow);
             bool pgUp = ImGui.IsKeyPressed(ImGuiKey.PageUp), pgDown = ImGui.IsKeyPressed(ImGuiKey.PageDown);
