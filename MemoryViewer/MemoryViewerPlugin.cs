@@ -73,7 +73,7 @@ namespace MemoryViewer
         // ******************************************************************************************
         public bool KeyPressed(int _id)
         {
-            if (_id == 0)
+                if (_id == 0)
             {
                 OpenMemViewerWindow = true;
                 return true;

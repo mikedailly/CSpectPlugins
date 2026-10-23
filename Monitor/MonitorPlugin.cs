@@ -84,7 +84,7 @@ namespace Monitor
             Console.WriteLine(" Monitor added");
             CSpect = _CSpect;
             List<sIO> ports = new List<sIO>();
-            ports.Add(new sIO("<ctrl><alt>m", eAccess.KeyPress, 0));
+            ports.Add(new sIO("<ctrl><shift>m", eAccess.KeyPress, 0));
             return ports;
         }
 

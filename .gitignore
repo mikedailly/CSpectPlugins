@@ -53,3 +53,9 @@ Plugin/.vs/Plugin.csproj.dtbcache.json
 Profiler/.vs/Profiler.csproj.dtbcache.json
 SpriteViewer/.vs/SpriteViewer.csproj.dtbcache.json
 z88dk/.vs/z88dk.csproj.dtbcache.json
+Monitor/bin/
+Monitor/obj/
+Monitor/.vs/Monitor.csproj.dtbcache.json
+sjASMPlus/.vs/
+sjASMPlus/bin/
+sjASMPlus/obj/

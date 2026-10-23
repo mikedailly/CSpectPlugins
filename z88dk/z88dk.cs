@@ -90,6 +90,7 @@ namespace Pasta80Symbols
         // **********************************************************************
         public bool LoadSymbols(string _path)
         {
+            Console.WriteLine("  Loading Z88DK map file: " + _path);
             string[] pBuffer;
             try
             {
