@@ -29,6 +29,7 @@ namespace Monitor
         static readonly Vector4 ColNormal = new Vector4(1.0f, 1.0f, 1.0f, 1.0f);
         static readonly Vector4 ColHex = new Vector4(1.00f, 0.88f, 0.35f, 1.0f);
         static readonly Vector4 ColUserBar = new Vector4(0.60f, 0.95f, 0.60f, 0.45f);     // pale green
+        static readonly Vector4 ColTStates = new Vector4(0.50f, 0.50f, 0.50f, 1.0f);      // medium grey
         static readonly Vector4 ColStopped = new Vector4(1.00f, 0.75f, 0.30f, 1.0f);
 
         const float SPLIT = 6.0f;               // splitter bar thickness
@@ -370,12 +371,12 @@ namespace Monitor
                 if (wheel != 0 && !ImGui.GetIO().KeyCtrl) Plugin.DisasmScrollBy(wheel > 0 ? -3 : 3);
             }
 
-            // Symbols: [gutter][label][instruction] - the label on the instruction's own line
-            // else:    [gutter][address][bytes][instruction], with labels on a line of their own
+            // Symbols: [gutter][label][T-states][instruction] - the label on the instruction's own line
+            // else:    [gutter][address][bytes][T-states][instruction], with labels on a line of their own
             bool sym = ShowSymbols;
-            int textCol = sym ? 2 : 3;
+            int textCol = sym ? 3 : 4;
             ImGuiTableFlags tf = ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoPadOuterX;
-            if (!ImGui.BeginTable(sym ? "##dissym" : "##dis", sym ? 3 : 4, tf)) return;
+            if (!ImGui.BeginTable(sym ? "##dissym" : "##dis", sym ? 4 : 5, tf)) return;
             ImGui.TableSetupColumn("bp", ImGuiTableColumnFlags.WidthFixed, S(14));
             if (sym)
             {
@@ -387,6 +388,9 @@ namespace Monitor
                 ImGui.TableSetupColumn("addr", ImGuiTableColumnFlags.WidthFixed);
                 ImGui.TableSetupColumn("bytes", ImGuiTableColumnFlags.WidthFixed, ImGui.CalcTextSize("00 00 00 00 ").X);
             }
+            // T-states, right aligned against the instruction ("17/10" when a branch taken/not taken differ)
+            float tsWidth = ImGui.CalcTextSize("00/00").X;
+            ImGui.TableSetupColumn("ts", ImGuiTableColumnFlags.WidthFixed, tsWidth);
             ImGui.TableSetupColumn("text", ImGuiTableColumnFlags.WidthStretch);
 
             UserBarKeys(s);
@@ -399,7 +403,7 @@ namespace Monitor
                 if (l.Label != null && !sym)
                 {
                     ImGui.TableNextRow();
-                    ImGui.TableSetColumnIndex(3);
+                    ImGui.TableSetColumnIndex(textCol);
                     ImGui.PushStyleColor(ImGuiCol.Text, ColLabel);
                     ImGui.TextUnformatted(LabelText(l.Label));
                     ImGui.PopStyleColor();
@@ -450,6 +454,14 @@ namespace Monitor
                     var sb = new StringBuilder();
                     for (int b = 0; b < l.Bytes.Length && b < 4; b++) sb.Append(l.Bytes[b].ToString("X2")).Append(' ');
                     ImGui.TextColored(ColDim, sb.ToString());
+                }
+
+                ImGui.TableSetColumnIndex(textCol - 1);
+                if (l.TStates1 > 0)
+                {
+                    string ts = l.TStates2 > 0 ? l.TStates1 + "/" + l.TStates2 : l.TStates1.ToString();
+                    ImGui.SetCursorPosX(ImGui.GetCursorPosX() + tsWidth - ImGui.CalcTextSize(ts).X);
+                    ImGui.TextColored(ColTStates, ts);
                 }
 
                 ImGui.TableSetColumnIndex(textCol);
