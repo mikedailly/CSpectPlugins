@@ -150,8 +150,8 @@ namespace Monitor
             else if (f9)
             {
                 int bi = BarIndex(s);
-                if (bi >= 0) Plugin.ToggleBreakpoint(s.Disasm[bi].Address, s.Disasm[bi].Physical);
-                else Plugin.ToggleBreakpoint(s.Regs.PC, false);
+                if (bi >= 0) Plugin.ToggleLineBreakpoint(s.Disasm[bi].Address, s.Disasm[bi].Physical);
+                else Plugin.ToggleLineBreakpoint(s.Regs.PC, false);
             }
         }
 
@@ -454,11 +454,14 @@ namespace Monitor
                     PutBar(l);                      // click a line: the user bar goes there
                 if (sym) ImGui.PopStyleColor();
                 // double click a line to set/clear a breakpoint on it
-                if (ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)) Plugin.ToggleBreakpoint(l.Address, l.Physical);
+                if (ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)) Plugin.ToggleLineBreakpoint(l.Address, l.Physical);
                 if (ImGui.BeginPopupContextItem("##dctx" + id))
                 {
                     ImGui.TextDisabled(where + OtherForm(s, l.Address, l.Physical));
-                    if (ImGui.MenuItem(l.Breakpoint ? "Clear breakpoint" : "Set breakpoint")) Plugin.ToggleBreakpoint(l.Address, l.Physical);
+                    int bpPhys = l.Physical ? l.Address : s.ToPhysical(l.Address);
+                    string bpWhere = bpPhys >= 0 ? " (" + MonitorAddress.Format(bpPhys, true) + ")" : "";
+                    if (ImGui.MenuItem((l.Breakpoint ? "Clear breakpoint" : "Set breakpoint") + bpWhere)) Plugin.ToggleLineBreakpoint(l.Address, l.Physical);
+                    if (logical >= 0 && ImGui.MenuItem("Set/clear 64K breakpoint ($" + logical.ToString("X4") + ", any bank)")) Plugin.ToggleBreakpoint(logical, false);
                     if (ImGui.MenuItem("Run to here", null, false, s.Stopped && logical >= 0)) Plugin.RunTo(logical);
                     if (ImGui.MenuItem("Set PC here", null, false, s.Stopped && logical >= 0)) { int pcTo = logical; Plugin.SetRegisters(r => r.PC = (ushort)pcTo); }
                     if (ImGui.MenuItem("Show in memory")) { MemPhysical = l.Physical; MemScrollTo = l.Address; MemFollow = 0; }
@@ -473,7 +476,7 @@ namespace Monitor
                 // gutter: breakpoint marker, click to toggle (after the row selectable, so it gets the click)
                 ImGui.TableSetColumnIndex(0);
                 Vector2 p = ImGui.GetCursorScreenPos();
-                if (ImGui.InvisibleButton("##bp" + id, new Vector2(S(14), ImGui.GetTextLineHeight()))) Plugin.ToggleBreakpoint(l.Address, l.Physical);
+                if (ImGui.InvisibleButton("##bp" + id, new Vector2(S(14), ImGui.GetTextLineHeight()))) Plugin.ToggleLineBreakpoint(l.Address, l.Physical);
                 if (l.Breakpoint && atPC)
                     ImGui.GetWindowDrawList().AddCircleFilled(p + new Vector2(S(7), ImGui.GetTextLineHeight() * 0.5f), S(5), ImGui.GetColorU32(ColBreakpoint));
                 else if (!l.Breakpoint && ImGui.IsItemHovered())

@@ -187,6 +187,38 @@ namespace Monitor
             });
         }
 
+        /// <summary>
+        ///     Toggle the breakpoint for a disassembly line (double click, F9, the gutter). Lines in RAM get a physical
+        ///     (bank:offset) breakpoint - in the 64K view, on whatever bank is paged in there right now - so it only
+        ///     stops in that bank. ROM isn't in physical memory, so a ROM line gets a 64K one. If the line already has a
+        ///     64K breakpoint, that's cleared instead.
+        /// </summary>
+        public void ToggleLineBreakpoint(int _address, bool _physical)
+        {
+            if (_physical) { ToggleBreakpoint(_address, true); return; }
+            _address &= 0xffff;
+            Queue(delegate
+            {
+                if (CSpect.Debugger(eDebugCommand.GetBreakpoint, _address) != 0)
+                {
+                    CSpect.Debugger(eDebugCommand.ClearBreakpoint, _address);
+                    if (TempBreakpoint == _address) TempBreakpoint = -1;
+                    return;
+                }
+                int phys = LogicalToPhysical(_address);
+                if (phys < 0) { CSpect.Debugger(eDebugCommand.SetBreakpoint, _address); return; }
+                bool set = CSpect.Debugger(eDebugCommand.GetPhysicalBreakpoint, phys) != 0;
+                CSpect.Debugger(set ? eDebugCommand.ClearPhysicalBreakpoint : eDebugCommand.SetPhysicalBreakpoint, phys);
+            });
+        }
+
+        /// <summary>64k address -> physical address through the MMU right now, or -1 for ROM (emulator thread only)</summary>
+        int LogicalToPhysical(int _address)
+        {
+            int bank = CSpect.GetNextRegister((byte)(0x50 + ((_address >> 13) & 7)));
+            return bank == 0xff ? -1 : (bank << 13) | (_address & 0x1fff);
+        }
+
         /// <summary>Set a temporary breakpoint and run - removed again when we stop</summary>
         public void RunTo(int _address)
         {
@@ -434,7 +466,10 @@ namespace Monitor
                 {
                     line.Bytes = new byte[len];
                     for (int b = 0; b < len; b++) line.Bytes[b] = s.Memory[(a + b) & 0xffff];
-                    line.Breakpoint = CSpect.Debugger(eDebugCommand.GetBreakpoint, a) != 0;
+                    // a 64K breakpoint, or a physical one on the bank paged in here
+                    int pa = s.ToPhysical(a);
+                    line.Breakpoint = CSpect.Debugger(eDebugCommand.GetBreakpoint, a) != 0 ||
+                                      (pa >= 0 && CSpect.Debugger(eDebugCommand.GetPhysicalBreakpoint, pa) != 0);
                     line.Label = Label(a);
                 }
                 line.Text = MarkLocalLabels(line.Text, phys ? s.ToLogical(a) : a, line.Bytes);
