@@ -19,6 +19,7 @@ namespace Monitor
     {
         static readonly Vector4 ColPCRow = new Vector4(0.55f, 0.45f, 0.05f, 1.0f);
         static readonly Vector4 ColBreakpoint = new Vector4(0.90f, 0.20f, 0.20f, 1.0f);
+        static readonly Vector4 ColBreakpointRow = new Vector4(0.62f, 0.10f, 0.10f, 1.0f);
         static readonly Vector4 ColChanged = new Vector4(1.00f, 0.45f, 0.35f, 1.0f);
         static readonly Vector4 ColLabel = new Vector4(0.45f, 0.80f, 1.00f, 1.0f);
         static readonly Vector4 ColDim = new Vector4(0.55f, 0.58f, 0.65f, 1.0f);
@@ -123,12 +124,34 @@ namespace Monitor
             bool open = true;
             if (ImGui.Begin("##Monitor", ref open, flags))
             {
+                FunctionKeys(s);
                 DrawToolbar(s);
                 ImGui.Separator();
                 if (s == null) ImGui.TextDisabled("Waiting for the emulator...");
                 else DrawPanes(s);
             }
             ImGui.End();
+        }
+
+        // ****************************************************************************************
+        //  F7 step, F8 step over, F9 breakpoint on the user bar (or on PC if there's no bar)
+        //  - anywhere in the Monitor window, unless typing into a box
+        // ****************************************************************************************
+        void FunctionKeys(MonitorSnapshot s)
+        {
+            // Keys typed into the Monitor never reach the emulator - CSpect would act on them too (its own debugger
+            // steps on F7/F8, and F8 toggles VSync while running). This only covers the Monitor's own OS window.
+            ImGui.SetNextFrameWantCaptureKeyboard(true);
+            if (s == null || ImGui.GetIO().WantTextInput) return;
+            bool f7 = ImGui.IsKeyPressed(ImGuiKey.F7), f8 = ImGui.IsKeyPressed(ImGuiKey.F8), f9 = ImGui.IsKeyPressed(ImGuiKey.F9, false);
+            if (f7 && s.Stopped) Plugin.Step();
+            else if (f8 && s.Stopped) Plugin.StepOver();
+            else if (f9)
+            {
+                int bi = BarIndex(s);
+                if (bi >= 0) Plugin.ToggleBreakpoint(s.Disasm[bi].Address, s.Disasm[bi].Physical);
+                else Plugin.ToggleBreakpoint(s.Regs.PC, false);
+            }
         }
 
         // ****************************************************************************************
@@ -142,8 +165,10 @@ namespace Monitor
             ImGui.SameLine();
             ImGui.BeginDisabled(!stopped);
             if (ImGui.Button("Step", new Vector2(S(70), 0))) Plugin.Step();
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled)) ImGui.SetTooltip("Single step (F7)");
             ImGui.SameLine();
             if (ImGui.Button("Step Over", new Vector2(S(80), 0))) Plugin.StepOver();
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled)) ImGui.SetTooltip("Step over CALLs, RSTs and repeated instructions (F8)");
             ImGui.SameLine();
             if (ImGui.Button("Back", new Vector2(S(60), 0))) Plugin.StepBack();
             if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled)) ImGui.SetTooltip("Rewind the CPU one instruction");
@@ -412,7 +437,10 @@ namespace Monitor
                 int logical = l.Physical ? s.ToLogical(l.Address) : l.Address;
                 string id = (l.Physical ? "p" : "l") + l.Address;
                 ImGui.TableNextRow();
-                if (s.Stopped && logical == s.Regs.PC) ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(ColPCRow));
+                // breakpoints are a red bar; PC sitting on one shows the PC bar with a red dot in the gutter
+                bool atPC = s.Stopped && logical == s.Regs.PC;
+                if (atPC) ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(ColPCRow));
+                else if (l.Breakpoint) ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(ColBreakpointRow));
                 if (l.Address == BarAddress && l.Physical == BarPhysical) ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg1, ImGui.GetColorU32(ColUserBar));
 
                 ImGui.TableSetColumnIndex(1);
@@ -443,9 +471,9 @@ namespace Monitor
                 ImGui.TableSetColumnIndex(0);
                 Vector2 p = ImGui.GetCursorScreenPos();
                 if (ImGui.InvisibleButton("##bp" + id, new Vector2(S(14), ImGui.GetTextLineHeight()))) Plugin.ToggleBreakpoint(l.Address, l.Physical);
-                if (l.Breakpoint)
+                if (l.Breakpoint && atPC)
                     ImGui.GetWindowDrawList().AddCircleFilled(p + new Vector2(S(7), ImGui.GetTextLineHeight() * 0.5f), S(5), ImGui.GetColorU32(ColBreakpoint));
-                else if (ImGui.IsItemHovered())
+                else if (!l.Breakpoint && ImGui.IsItemHovered())
                     ImGui.GetWindowDrawList().AddCircle(p + new Vector2(S(7), ImGui.GetTextLineHeight() * 0.5f), S(5), ImGui.GetColorU32(ColBreakpoint));
 
                 if (!sym)
