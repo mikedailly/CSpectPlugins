@@ -313,8 +313,11 @@ namespace Monitor
                 ImGui.TableSetColumnIndex(1);
                 string where = MonitorAddress.Format(l.Address, l.Physical);
                 if (sym) ImGui.PushStyleColor(ImGuiCol.Text, ColLabel);
-                ImGui.Selectable((sym ? (l.Label != null ? Crop(LabelText(l.Label), SYMBOL_CHARS) : "") : where) + "##dl" + id, false, ImGuiSelectableFlags.SpanAllColumns | ImGuiSelectableFlags.AllowOverlap);
+                ImGui.Selectable((sym ? (l.Label != null ? Crop(LabelText(l.Label), SYMBOL_CHARS) : "") : where) + "##dl" + id, false,
+                                 ImGuiSelectableFlags.SpanAllColumns | ImGuiSelectableFlags.AllowOverlap | ImGuiSelectableFlags.AllowDoubleClick);
                 if (sym) ImGui.PopStyleColor();
+                // double click a line to set/clear a breakpoint on it
+                if (ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)) Plugin.ToggleBreakpoint(l.Address, l.Physical);
                 if (ImGui.BeginPopupContextItem("##dctx" + id))
                 {
                     ImGui.TextDisabled(where + OtherForm(s, l.Address, l.Physical));
