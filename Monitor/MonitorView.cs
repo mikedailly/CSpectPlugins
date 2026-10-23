@@ -230,6 +230,11 @@ namespace Monitor
         //  Disassembly: gutter (breakpoints), address, bytes, instruction. PC highlighted.
         //  Click the gutter to toggle a breakpoint; right click a line for more.
         // ****************************************************************************************
+        /// <summary>Width of the Symbols column, in characters - longer labels are cropped</summary>
+        const int SYMBOL_CHARS = 32;
+
+        static string Crop(string _text, int _chars) { return _text.Length > _chars ? _text.Substring(0, _chars) : _text; }
+
         /// <summary>Show labels in place of addresses and bytes (the "Symbols" tick box)</summary>
         internal bool ShowSymbols = true;
 
@@ -276,9 +281,8 @@ namespace Monitor
             ImGui.TableSetupColumn("bp", ImGuiTableColumnFlags.WidthFixed, 14);
             if (sym)
             {
-                float w = ImGui.CalcTextSize("MMMMMMMMMM").X;           // keep the instructions lined up even with no labels in view
-                foreach (DisasmLine dl in s.Disasm) if (dl.Label != null) w = Math.Max(w, ImGui.CalcTextSize(LabelText(dl.Label)).X);
-                ImGui.TableSetupColumn("label", ImGuiTableColumnFlags.WidthFixed, w + 8);
+                // a fixed SYMBOL_CHARS wide column (longer labels are cropped), so the instructions always line up
+                ImGui.TableSetupColumn("label", ImGuiTableColumnFlags.WidthFixed, ImGui.CalcTextSize(new string('M', SYMBOL_CHARS)).X + 8);
             }
             else
             {
@@ -309,7 +313,7 @@ namespace Monitor
                 ImGui.TableSetColumnIndex(1);
                 string where = MonitorAddress.Format(l.Address, l.Physical);
                 if (sym) ImGui.PushStyleColor(ImGuiCol.Text, ColLabel);
-                ImGui.Selectable((sym ? (l.Label != null ? LabelText(l.Label) : "") : where) + "##dl" + id, false, ImGuiSelectableFlags.SpanAllColumns | ImGuiSelectableFlags.AllowOverlap);
+                ImGui.Selectable((sym ? (l.Label != null ? Crop(LabelText(l.Label), SYMBOL_CHARS) : "") : where) + "##dl" + id, false, ImGuiSelectableFlags.SpanAllColumns | ImGuiSelectableFlags.AllowOverlap);
                 if (sym) ImGui.PopStyleColor();
                 if (ImGui.BeginPopupContextItem("##dctx" + id))
                 {
@@ -323,7 +327,7 @@ namespace Monitor
                 if (ImGui.IsItemHovered() && !ImGui.IsPopupOpen("", ImGuiPopupFlags.AnyPopupId))
                 {
                     string t = l.TStates2 > 0 ? string.Format("{0}/{1} T-states", l.TStates1, l.TStates2) : string.Format("{0} T-states", l.TStates1);
-                    ImGui.SetTooltip(where + OtherForm(s, l.Address, l.Physical) + "\n" + t);
+                    ImGui.SetTooltip((l.Label != null ? l.Label + "\n" : "") + where + OtherForm(s, l.Address, l.Physical) + "\n" + t);
                 }
 
                 // gutter: breakpoint marker, click to toggle (after the row selectable, so it gets the click)
