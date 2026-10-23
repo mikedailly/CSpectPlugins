@@ -98,7 +98,8 @@ namespace Monitor
         string MemEditText = "";
         string RegEditName;
         string RegEditText = "";
-        bool HideCSpectDebugger;
+        /// <summary>"Hide CSpect debugger" - on whenever the Monitor opens (MonitorPlugin.OSTick)</summary>
+        internal bool HideCSpectDebugger = true;
 
         public MonitorView(MonitorPlugin _plugin) { Plugin = _plugin; }
 

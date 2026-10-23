@@ -129,6 +129,9 @@ namespace Monitor
             w.OnClosed += Window_OnClosed;
             Window = w;
             lock (Gate) { Commands.Clear(); DisasmFollow = true; DisasmScroll = 0; }
+            // the Monitor is the debugger now: hide CSpect's own while it's open (the tick box turns it back on)
+            View.HideCSpectDebugger = true;
+            SetRemote(true);
             Latest = null;
             LastStart = -1;
             Active = true;
