@@ -259,6 +259,19 @@ namespace Monitor
                             r = CSpect.GetRegs();
                         }
                     }
+                    else if (_over && IsBackwardBranch(pc, op))
+                    {
+                        // a loop (DJNZ / JR cc / JP cc back): run it until it falls through, as CSpect's Step Over does
+                        int next = (pc + BranchLength(op[0])) & 0xffff;
+                        CSpect.Debugger(eDebugCommand.Step); count++;
+                        r = CSpect.GetRegs();
+                        while (r.PC != next)
+                        {
+                            if (count >= MAX_SOURCE_STEP || AtBreakpoint(r.PC)) { Stepped(); return; }
+                            CSpect.Debugger(eDebugCommand.Step); count++;
+                            r = CSpect.GetRegs();
+                        }
+                    }
                     else
                     {
                         CSpect.Debugger(eDebugCommand.Step); count++;
@@ -272,6 +285,19 @@ namespace Monitor
                 Stepped();
             });
         }
+
+        /// <summary>
+        ///     A conditional branch backwards - the end of a loop: DJNZ e, JR cc,e or JP cc,nn to before itself.
+        ///     (Unconditional JR/JP never fall through, so they aren't "stepped over".)
+        /// </summary>
+        static bool IsBackwardBranch(int _pc, byte[] _op)
+        {
+            byte o = _op[0];
+            if (o == 0x10 || o == 0x20 || o == 0x28 || o == 0x30 || o == 0x38) return (sbyte)_op[1] < 0;
+            if ((o & 0xC7) == 0xC2) return (_op[1] | (_op[2] << 8)) <= _pc;
+            return false;
+        }
+        static int BranchLength(byte _op) { return (_op & 0xC7) == 0xC2 ? 3 : 2; }
 
         /// <summary>CALL nn, CALL cc,nn, RST n</summary>
         static bool IsCall(byte _op) { return _op == 0xCD || (_op & 0xC7) == 0xC4 || (_op & 0xC7) == 0xC7; }
