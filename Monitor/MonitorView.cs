@@ -27,6 +27,7 @@ namespace Monitor
         static readonly Vector4 ColFlagOn = new Vector4(0.20f, 0.45f, 0.80f, 1.0f);
         static readonly Vector4 ColFlagOff = new Vector4(0.13f, 0.15f, 0.19f, 1.0f);
         static readonly Vector4 ColNormal = new Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+        static readonly Vector4 ColHex = new Vector4(1.00f, 0.88f, 0.35f, 1.0f);
         static readonly Vector4 ColStopped = new Vector4(1.00f, 0.75f, 0.30f, 1.0f);
 
         const float SPLIT = 6.0f;               // splitter bar thickness
@@ -310,11 +311,71 @@ namespace Monitor
                 ImGui.TextColored(ColDim, sb.ToString());
 
                 ImGui.TableSetColumnIndex(3);
-                ImGui.TextUnformatted(l.Text);
+                DrawInstruction(l.Text);
                 if (ImGui.GetItemRectMax().Y <= bottom) fitted++;
             }
             ImGui.EndTable();
             Plugin.SetDisasmVisible(fitted);
+        }
+
+        /// <summary>Z80 register and condition names - everything else in an operand that's a word is a label</summary>
+        static readonly System.Collections.Generic.HashSet<string> RegisterNames = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "A", "B", "C", "D", "E", "H", "L", "I", "R", "F", "AF", "AF'", "BC", "DE", "HL", "SP", "PC", "IX", "IY",
+            "IXH", "IXL", "IYH", "IYL", "XH", "XL", "YH", "YL", "HX", "LX", "HY", "LY",
+            "NZ", "Z", "NC", "PO", "PE", "P", "M"
+        };
+
+        // ****************************************************************************************
+        /// <summary>
+        ///     Draw an instruction: mnemonic and registers white, labels light blue, $hex values yellow
+        /// </summary>
+        // ****************************************************************************************
+        static void DrawInstruction(string _text)
+        {
+            var parts = new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<string, Vector4>>();
+            Vector4 white = ImGui.GetStyle().Colors[(int)ImGuiCol.Text];
+            int i = 0, n = _text.Length;
+            bool mnemonic = true;
+            while (i < n)
+            {
+                char c = _text[i];
+                int start = i;
+                Vector4 col = white;
+                if (c == '$' && i + 1 < n && Uri.IsHexDigit(_text[i + 1]))
+                {
+                    i++;
+                    while (i < n && Uri.IsHexDigit(_text[i])) i++;
+                    col = ColHex;
+                }
+                else if (char.IsLetter(c) || c == '_' || c == '.' || c == '@' || c == '!')
+                {
+                    while (i < n && (char.IsLetterOrDigit(_text[i]) || _text[i] == '_' || _text[i] == '.' || _text[i] == '@' || _text[i] == '!')) i++;
+                    if (i < n && _text[i] == '\'' && _text.Substring(start, i - start).Equals("AF", StringComparison.OrdinalIgnoreCase)) i++;      // AF'
+                    string word = _text.Substring(start, i - start);
+                    if (mnemonic) mnemonic = false;                                     // first word: the instruction
+                    else if (!RegisterNames.Contains(word)) col = ColLabel;             // an operand that isn't a register: a label
+                }
+                else
+                {
+                    while (i < n && !(char.IsLetter(_text[i]) || _text[i] == '_' || _text[i] == '.' || _text[i] == '@' || _text[i] == '!' ||
+                                      (_text[i] == '$' && i + 1 < n && Uri.IsHexDigit(_text[i + 1])))) i++;
+                }
+                // merge runs of the same colour
+                if (parts.Count > 0 && parts[parts.Count - 1].Value == col)
+                    parts[parts.Count - 1] = new System.Collections.Generic.KeyValuePair<string, Vector4>(parts[parts.Count - 1].Key + _text.Substring(start, i - start), col);
+                else parts.Add(new System.Collections.Generic.KeyValuePair<string, Vector4>(_text.Substring(start, i - start), col));
+            }
+            if (parts.Count == 0) { ImGui.TextUnformatted(""); return; }
+            ImGui.BeginGroup();
+            for (int p = 0; p < parts.Count; p++)
+            {
+                if (p > 0) ImGui.SameLine(0, 0);
+                ImGui.PushStyleColor(ImGuiCol.Text, parts[p].Value);
+                ImGui.TextUnformatted(parts[p].Key);
+                ImGui.PopStyleColor();
+            }
+            ImGui.EndGroup();
         }
 
         // ****************************************************************************************
