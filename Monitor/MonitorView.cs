@@ -230,6 +230,16 @@ namespace Monitor
         //  Disassembly: gutter (breakpoints), address, bytes, instruction. PC highlighted.
         //  Click the gutter to toggle a breakpoint; right click a line for more.
         // ****************************************************************************************
+        /// <summary>Show labels in place of addresses and bytes (the "Symbols" tick box)</summary>
+        internal bool ShowSymbols = true;
+
+        /// <summary>"LABEL:" - a local label ("MAINLOOP@SKIPPRINT") as "@SKIPPRINT:", as in the operands</summary>
+        static string LabelText(string _label)
+        {
+            int at = _label.IndexOf('@');
+            return (at > 0 ? _label.Substring(at) : _label) + ":";
+        }
+
         void DrawDisassembly(MonitorSnapshot s)
         {
             ImGui.SameLine(0, 16);
@@ -243,6 +253,9 @@ namespace Monitor
             if (ImGui.Button("PC")) Plugin.DisasmFollowPC();
             ImGui.EndDisabled();
             if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled)) ImGui.SetTooltip(follow ? "Following PC" : "Follow PC again");
+            ImGui.SameLine(0, 16);
+            ImGui.Checkbox("Symbols", ref ShowSymbols);
+            if (ImGui.IsItemHovered()) ImGui.SetTooltip("Show each line's label instead of its address and bytes\n(hover a line for its address)");
 
             float line = ImGui.GetTextLineHeightWithSpacing();
             Plugin.SetDisasmLines((int)(ImGui.GetContentRegionAvail().Y / line) + 1);
@@ -254,11 +267,24 @@ namespace Monitor
                 if (wheel != 0) Plugin.DisasmScrollBy(wheel > 0 ? -3 : 3);
             }
 
+            // Symbols: [gutter][label][instruction] - the label on the instruction's own line
+            // else:    [gutter][address][bytes][instruction], with labels on a line of their own
+            bool sym = ShowSymbols;
+            int textCol = sym ? 2 : 3;
             ImGuiTableFlags tf = ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoPadOuterX;
-            if (!ImGui.BeginTable("##dis", 4, tf)) return;
+            if (!ImGui.BeginTable(sym ? "##dissym" : "##dis", sym ? 3 : 4, tf)) return;
             ImGui.TableSetupColumn("bp", ImGuiTableColumnFlags.WidthFixed, 14);
-            ImGui.TableSetupColumn("addr", ImGuiTableColumnFlags.WidthFixed);
-            ImGui.TableSetupColumn("bytes", ImGuiTableColumnFlags.WidthFixed, ImGui.CalcTextSize("00 00 00 00 ").X);
+            if (sym)
+            {
+                float w = ImGui.CalcTextSize("MMMMMMMMMM").X;           // keep the instructions lined up even with no labels in view
+                foreach (DisasmLine dl in s.Disasm) if (dl.Label != null) w = Math.Max(w, ImGui.CalcTextSize(LabelText(dl.Label)).X);
+                ImGui.TableSetupColumn("label", ImGuiTableColumnFlags.WidthFixed, w + 8);
+            }
+            else
+            {
+                ImGui.TableSetupColumn("addr", ImGuiTableColumnFlags.WidthFixed);
+                ImGui.TableSetupColumn("bytes", ImGuiTableColumnFlags.WidthFixed, ImGui.CalcTextSize("00 00 00 00 ").X);
+            }
             ImGui.TableSetupColumn("text", ImGuiTableColumnFlags.WidthStretch);
 
             float bottom = ImGui.GetWindowPos().Y + ImGui.GetWindowHeight() - ImGui.GetStyle().WindowPadding.Y;
@@ -266,14 +292,12 @@ namespace Monitor
             foreach (DisasmLine l in s.Disasm)
             {
                 if (ImGui.GetCursorScreenPos().Y > bottom) break;
-                if (l.Label != null)
+                if (l.Label != null && !sym)
                 {
                     ImGui.TableNextRow();
                     ImGui.TableSetColumnIndex(3);
-                    // a local label ("MAINLOOP@SKIPPRINT") shows as "@SKIPPRINT", as in the operands
-                    int at = l.Label.IndexOf('@');
                     ImGui.PushStyleColor(ImGuiCol.Text, ColLabel);
-                    ImGui.TextUnformatted((at > 0 ? l.Label.Substring(at) : l.Label) + ":");
+                    ImGui.TextUnformatted(LabelText(l.Label));
                     ImGui.PopStyleColor();
                 }
                 // the 64K address of this line (physical lines only have one while their bank is paged in)
@@ -284,7 +308,9 @@ namespace Monitor
 
                 ImGui.TableSetColumnIndex(1);
                 string where = MonitorAddress.Format(l.Address, l.Physical);
-                ImGui.Selectable(where + "##dl" + id, false, ImGuiSelectableFlags.SpanAllColumns | ImGuiSelectableFlags.AllowOverlap);
+                if (sym) ImGui.PushStyleColor(ImGuiCol.Text, ColLabel);
+                ImGui.Selectable((sym ? (l.Label != null ? LabelText(l.Label) : "") : where) + "##dl" + id, false, ImGuiSelectableFlags.SpanAllColumns | ImGuiSelectableFlags.AllowOverlap);
+                if (sym) ImGui.PopStyleColor();
                 if (ImGui.BeginPopupContextItem("##dctx" + id))
                 {
                     ImGui.TextDisabled(where + OtherForm(s, l.Address, l.Physical));
@@ -309,12 +335,15 @@ namespace Monitor
                 else if (ImGui.IsItemHovered())
                     ImGui.GetWindowDrawList().AddCircle(p + new Vector2(7, ImGui.GetTextLineHeight() * 0.5f), 5, ImGui.GetColorU32(ColBreakpoint));
 
-                ImGui.TableSetColumnIndex(2);
-                var sb = new StringBuilder();
-                for (int b = 0; b < l.Bytes.Length && b < 4; b++) sb.Append(l.Bytes[b].ToString("X2")).Append(' ');
-                ImGui.TextColored(ColDim, sb.ToString());
+                if (!sym)
+                {
+                    ImGui.TableSetColumnIndex(2);
+                    var sb = new StringBuilder();
+                    for (int b = 0; b < l.Bytes.Length && b < 4; b++) sb.Append(l.Bytes[b].ToString("X2")).Append(' ');
+                    ImGui.TextColored(ColDim, sb.ToString());
+                }
 
-                ImGui.TableSetColumnIndex(3);
+                ImGui.TableSetColumnIndex(textCol);
                 DrawInstruction(l.Text);
                 if (ImGui.GetItemRectMax().Y <= bottom) fitted++;
             }
