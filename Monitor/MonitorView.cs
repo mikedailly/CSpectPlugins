@@ -47,6 +47,9 @@ namespace Monitor
         internal float SplitX = 0.64f;          // left column width
         internal float SplitLeftY = 0.60f;      // disassembly / memory
         internal float SplitRightY = 0.42f;     // registers / stack
+        /// <summary>Registers pane content size (measured as it's drawn), and whether the splits have been fitted to it yet</summary>
+        Vector2 RegsNeed;
+        internal bool LayoutFitted;
 
         // previous stop, for "changed" highlighting
         MonitorSnapshot Shown;
@@ -264,6 +267,7 @@ namespace Monitor
             Vector2 origin = ImGui.GetCursorPos();
             Vector2 avail = ImGui.GetContentRegionAvail();
             float W = Math.Max(avail.X, MIN_PANE * 2 + SPLIT), H = Math.Max(avail.Y, MIN_PANE * 2 + SPLIT);
+            if (!LayoutFitted && RegsNeed.X > 0) FitRightColumn(W, H);
 
             float leftW = Clamp(W * SplitX, MIN_PANE, W - SPLIT - MIN_PANE);
             float rightW = W - leftW - SPLIT;
@@ -280,10 +284,35 @@ namespace Monitor
             Splitter("##splitX", new Vector2(origin.X + leftW, origin.Y), new Vector2(SPLIT, H), true, ref SplitX, W);
 
             ImGui.SetCursorPos(new Vector2(rightX, origin.Y));
-            Pane("Registers", "##regs", new Vector2(rightW, rightTop), WheelFlags(), () => DrawRegisters(s));
+            Pane("Registers", "##regs", new Vector2(rightW, rightTop), WheelFlags(), () =>
+            {
+                ImGui.BeginGroup();
+                DrawRegisters(s);
+                ImGui.EndGroup();
+                // how big the pane needs to be: everything drawn, plus the window padding
+                if (ImGui.GetScrollY() == 0 && ImGui.GetScrollX() == 0)
+                    RegsNeed = ImGui.GetItemRectMax() - ImGui.GetWindowPos() + ImGui.GetStyle().WindowPadding;
+            });
             Splitter("##splitRight", new Vector2(rightX, origin.Y + rightTop), new Vector2(rightW, SPLIT), false, ref SplitRightY, H);
             ImGui.SetCursorPos(new Vector2(rightX, origin.Y + rightTop + SPLIT));
             Pane("Stack", "##stack", new Vector2(rightW, H - rightTop - SPLIT), WheelFlags(), () => DrawStack(s));
+        }
+
+        /// <summary>
+        ///     First layout: make the registers/stack column just wide enough for the registers (and the stack's
+        ///     offset/address/value with room for a label), and the registers pane just tall enough for its contents.
+        ///     Everything else goes to the disassembly and memory. The splitters can still move them after.
+        /// </summary>
+        void FitRightColumn(float W, float H)
+        {
+            LayoutFitted = true;
+            ImGuiStylePtr st = ImGui.GetStyle();
+            float stackW = ImGui.CalcTextSize("-08 $FEF8 $0000 ").X + ImGui.CalcTextSize(new string('M', 12)).X +
+                           st.CellPadding.X * 6 + st.WindowPadding.X * 2 + st.ScrollbarSize;
+            float needW = Math.Max(RegsNeed.X, stackW) + 2;
+            float needH = RegsNeed.Y + 2;
+            if (needW < W - SPLIT - MIN_PANE) SplitX = (W - needW - SPLIT) / W;
+            if (needH < H - SPLIT - MIN_PANE) SplitRightY = needH / H;
         }
 
         static float Clamp(float v, float lo, float hi) { return Math.Max(lo, Math.Min(hi, v)); }
@@ -630,7 +659,7 @@ namespace Monitor
         void DrawRegisters(MonitorSnapshot s)
         {
             Z80Regs r = s.Regs, p = PrevRegs ?? s.Regs;
-            if (!ImGui.BeginTable("##regs", 4, ImGuiTableFlags.SizingFixedFit)) return;
+            if (!ImGui.BeginTable("##regs", 4, ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoHostExtendX)) return;
             ImGui.TableSetupColumn("n1", ImGuiTableColumnFlags.WidthFixed, S(34));
             ImGui.TableSetupColumn("v1", ImGuiTableColumnFlags.WidthFixed, S(70));
             ImGui.TableSetupColumn("n2", ImGuiTableColumnFlags.WidthFixed, S(34));
@@ -656,7 +685,7 @@ namespace Monitor
             int f = r.AF & 0xff, pf = p.AF & 0xff;
             for (int bit = 7; bit >= 0; bit--)
             {
-                ImGui.SameLine(0, bit == 7 ? 10 : 3);
+                ImGui.SameLine(0, S(bit == 7 ? 10 : 3));
                 bool on = (f & (1 << bit)) != 0;
                 bool changed = ((f ^ pf) & (1 << bit)) != 0;
                 // set flags are lit buttons, clear ones dim text; red text = changed by the last step
@@ -673,7 +702,7 @@ namespace Monitor
             ImGui.TextColored(ColDim, "MMU");
             for (int i = 0; i < 8; i++)
             {
-                ImGui.SameLine(0, i == 0 ? 10 : 6);
+                ImGui.SameLine(0, S(i == 0 ? 10 : 6));
                 ImGui.TextUnformatted(s.Mmu[i] == 0xff ? "ROM" : s.Mmu[i].ToString("X2"));
                 if (ImGui.IsItemHovered())
                     ImGui.SetTooltip(string.Format("MMU{0} ${1:X4}-${2:X4}: {3}", i, i * 0x2000, i * 0x2000 + 0x1fff,
