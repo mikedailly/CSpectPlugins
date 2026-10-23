@@ -134,7 +134,7 @@ namespace Monitor
         }
 
         // ****************************************************************************************
-        //  F7 step, F8 step over, F9 breakpoint on the user bar (or on PC if there's no bar)
+        //  F1 break/run, F7 step, F8 step over, F9 breakpoint on the user bar (or on PC if there's no bar)
         //  - anywhere in the Monitor window, unless typing into a box
         // ****************************************************************************************
         void FunctionKeys(MonitorSnapshot s)
@@ -143,6 +143,7 @@ namespace Monitor
             // steps on F7/F8, and F8 toggles VSync while running). This only covers the Monitor's own OS window.
             ImGui.SetNextFrameWantCaptureKeyboard(true);
             if (s == null || ImGui.GetIO().WantTextInput) return;
+            if (ImGui.IsKeyPressed(ImGuiKey.F1, false)) { if (s.Stopped) Plugin.Run(); else Plugin.Break(); return; }
             bool f7 = ImGui.IsKeyPressed(ImGuiKey.F7), f8 = ImGui.IsKeyPressed(ImGuiKey.F8), f9 = ImGui.IsKeyPressed(ImGuiKey.F9, false);
             if (f7 && s.Stopped) Plugin.Step();
             else if (f8 && s.Stopped) Plugin.StepOver();
@@ -160,17 +161,19 @@ namespace Monitor
         void DrawToolbar(MonitorSnapshot s)
         {
             bool stopped = s != null && s.Stopped;
-            if (stopped) { if (ImGui.Button("Run", new Vector2(S(70), 0))) Plugin.Run(); }
-            else { if (ImGui.Button("Break", new Vector2(S(70), 0))) Plugin.Break(); }
+            // Run/Break swap places, so give them the same width
+            float runWidth = ImGui.CalcTextSize("Break (F1)").X + ImGui.GetStyle().FramePadding.X * 2;
+            if (stopped) { if (ImGui.Button("Run (F1)", new Vector2(runWidth, 0))) Plugin.Run(); }
+            else { if (ImGui.Button("Break (F1)", new Vector2(runWidth, 0))) Plugin.Break(); }
             ImGui.SameLine();
             ImGui.BeginDisabled(!stopped);
-            if (ImGui.Button("Step", new Vector2(S(70), 0))) Plugin.Step();
-            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled)) ImGui.SetTooltip("Single step (F7)");
+            if (ImGui.Button("Step (F7)")) Plugin.Step();
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled)) ImGui.SetTooltip("Single step");
             ImGui.SameLine();
-            if (ImGui.Button("Step Over", new Vector2(S(80), 0))) Plugin.StepOver();
-            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled)) ImGui.SetTooltip("Step over CALLs, RSTs and repeated instructions (F8)");
+            if (ImGui.Button("Step Over (F8)")) Plugin.StepOver();
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled)) ImGui.SetTooltip("Step over CALLs, RSTs and repeated instructions");
             ImGui.SameLine();
-            if (ImGui.Button("Back", new Vector2(S(60), 0))) Plugin.StepBack();
+            if (ImGui.Button("Back")) Plugin.StepBack();
             if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled)) ImGui.SetTooltip("Rewind the CPU one instruction");
             ImGui.EndDisabled();
             ImGui.SameLine(0, S(20));
