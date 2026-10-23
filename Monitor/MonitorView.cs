@@ -150,7 +150,7 @@ namespace Monitor
                 FunctionKeys(s);
                 DrawToolbar(s);
                 ImGui.Separator();
-                if (s == null) ImGui.TextDisabled("Waiting for the emulator...");
+                if (s == null) TextDim("Waiting for the emulator...");
                 else DrawPanes(s);
             }
             ImGui.End();
@@ -231,19 +231,19 @@ namespace Monitor
             ImGui.SameLine();
             ImGui.BeginDisabled(!stopped);
             if (ImGui.Button("Step (F7)")) Plugin.Step();
-            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled)) ImGui.SetTooltip("Single step");
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled)) Tip("Single step");
             ImGui.SameLine();
             if (ImGui.Button("Step Over (F8)")) Plugin.StepOver();
-            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled)) ImGui.SetTooltip("Step over CALLs, RSTs and repeated instructions");
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled)) Tip("Step over CALLs, RSTs and repeated instructions");
             ImGui.SameLine();
             if (ImGui.Button("Back")) Plugin.StepBack();
-            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled)) ImGui.SetTooltip("Rewind the CPU one instruction");
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled)) Tip("Rewind the CPU one instruction");
             ImGui.EndDisabled();
             ImGui.SameLine(0, S(20));
             if (ImGui.Button("Clear Breakpoints")) Plugin.ClearAllBreakpoints();
             ImGui.SameLine(0, S(20));
             if (ImGui.Checkbox("Hide CSpect debugger", ref HideCSpectDebugger)) Plugin.SetRemote(HideCSpectDebugger);
-            if (ImGui.IsItemHovered()) ImGui.SetTooltip("While stopped, show the game screen in the main window instead of CSpect's own debugger");
+            if (ImGui.IsItemHovered()) Tip("While stopped, show the game screen in the main window instead of CSpect's own debugger");
 
             if (s != null)
             {
@@ -251,9 +251,9 @@ namespace Monitor
                 if (s.Stopped)
                 {
                     string label = LabelAt(s, s.Regs.PC);
-                    ImGui.TextColored(ColStopped, "Stopped at $" + s.Regs.PC.ToString("X4") + (label != null ? "  " + label : ""));
+                    TextCol(ColStopped, "Stopped at $" + s.Regs.PC.ToString("X4") + (label != null ? "  " + label : ""));
                 }
-                else ImGui.TextColored(ColRunning, "Running");
+                else TextCol(ColRunning, "Running");
             }
         }
 
@@ -319,13 +319,38 @@ namespace Monitor
             if (needH < H - SPLIT - MIN_PANE) SplitRightY = needH / H;
         }
 
+        // ****************************************************************************************
+        //  Text that is never a printf format. ImGui.NET passes the string straight through as cimgui's "fmt",
+        //  so a '%' in it (a memory byte of $25 in the ASCII column, a label, a tooltip) reads varargs that
+        //  aren't there and crashes. Everything with variable text goes through these.
+        // ****************************************************************************************
+        static void TextCol(Vector4 _col, string _text)
+        {
+            ImGui.PushStyleColor(ImGuiCol.Text, _col);
+            ImGui.TextUnformatted(_text);
+            ImGui.PopStyleColor();
+        }
+        static void TextDim(string _text) { TextCol(ImGui.GetStyle().Colors[(int)ImGuiCol.TextDisabled], _text); }
+        static void TextWrap(string _text)
+        {
+            ImGui.PushTextWrapPos(0.0f);
+            ImGui.TextUnformatted(_text);
+            ImGui.PopTextWrapPos();
+        }
+        static void Tip(string _text)
+        {
+            if (!ImGui.BeginTooltip()) return;
+            ImGui.TextUnformatted(_text);
+            ImGui.EndTooltip();
+        }
+
         static float Clamp(float v, float lo, float hi) { return Math.Max(lo, Math.Min(hi, v)); }
 
         static void Pane(string _title, string _id, Vector2 _size, ImGuiWindowFlags _flags, Action _body)
         {
             if (ImGui.BeginChild(_id, _size, ImGuiChildFlags.Borders, _flags))
             {
-                if (_title != null) ImGui.TextColored(ColLabel, _title);
+                if (_title != null) TextCol(ColLabel, _title);
                 _body();
             }
             ImGui.EndChild();
@@ -473,10 +498,10 @@ namespace Monitor
             ImGui.BeginDisabled(follow);
             if (ImGui.Button("PC")) Plugin.DisasmFollowPC();
             ImGui.EndDisabled();
-            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled)) ImGui.SetTooltip(follow ? "Following PC" : "Follow PC again");
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled)) Tip(follow ? "Following PC" : "Follow PC again");
             ImGui.SameLine(0, S(16));
             ImGui.Checkbox("Symbols", ref ShowSymbols);
-            if (ImGui.IsItemHovered()) ImGui.SetTooltip("Show each line's label instead of its address and bytes\n(hover a line for its address)");
+            if (ImGui.IsItemHovered()) Tip("Show each line's label instead of its address and bytes\n(hover a line for its address)");
 
             float line = ImGui.GetTextLineHeightWithSpacing();
             Plugin.SetDisasmLines((int)(ImGui.GetContentRegionAvail().Y / line) + 1);
@@ -546,7 +571,7 @@ namespace Monitor
                 if (ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)) Plugin.ToggleLineBreakpoint(l.Address, l.Physical);
                 if (ImGui.BeginPopupContextItem("##dctx" + id))
                 {
-                    ImGui.TextDisabled(where + OtherForm(s, l.Address, l.Physical));
+                    TextDim(where + OtherForm(s, l.Address, l.Physical));
                     int bpPhys = l.Physical ? l.Address : s.ToPhysical(l.Address);
                     string bpWhere = bpPhys >= 0 ? " (" + MonitorAddress.Format(bpPhys, true) + ")" : "";
                     if (ImGui.MenuItem((l.Breakpoint ? "Clear breakpoint" : "Set breakpoint") + bpWhere)) Plugin.ToggleLineBreakpoint(l.Address, l.Physical);
@@ -559,7 +584,7 @@ namespace Monitor
                 if (ImGui.IsItemHovered() && !ImGui.IsPopupOpen("", ImGuiPopupFlags.AnyPopupId))
                 {
                     string t = l.TStates2 > 0 ? string.Format("{0}/{1} T-states", l.TStates1, l.TStates2) : string.Format("{0} T-states", l.TStates1);
-                    ImGui.SetTooltip((l.Label != null ? l.Label + "\n" : "") + where + OtherForm(s, l.Address, l.Physical) + "\n" + t);
+                    Tip((l.Label != null ? l.Label + "\n" : "") + where + OtherForm(s, l.Address, l.Physical) + "\n" + t);
                 }
 
                 // gutter: breakpoint marker, click to toggle (after the row selectable, so it gets the click)
@@ -576,7 +601,7 @@ namespace Monitor
                     ImGui.TableSetColumnIndex(2);
                     var sb = new StringBuilder();
                     for (int b = 0; b < l.Bytes.Length && b < 4; b++) sb.Append(l.Bytes[b].ToString("X2")).Append(' ');
-                    ImGui.TextColored(ColDim, sb.ToString());
+                    TextCol(ColDim, sb.ToString());
                 }
 
                 ImGui.TableSetColumnIndex(textCol - 1);
@@ -584,7 +609,7 @@ namespace Monitor
                 {
                     string ts = l.TStates2 > 0 ? l.TStates1 + "/" + l.TStates2 : l.TStates1.ToString();
                     ImGui.SetCursorPosX(ImGui.GetCursorPosX() + tsWidth - ImGui.CalcTextSize(ts).X);
-                    ImGui.TextColored(ColTStates, ts);
+                    TextCol(ColTStates, ts);
                 }
 
                 ImGui.TableSetColumnIndex(textCol);
@@ -703,16 +728,16 @@ namespace Monitor
             }
 
             ImGui.Spacing();
-            ImGui.TextColored(ColDim, "MMU");
+            TextCol(ColDim, "MMU");
             for (int i = 0; i < 8; i++)
             {
                 ImGui.SameLine(0, S(i == 0 ? 10 : 6));
                 ImGui.TextUnformatted(s.Mmu[i] == 0xff ? "ROM" : s.Mmu[i].ToString("X2"));
                 if (ImGui.IsItemHovered())
-                    ImGui.SetTooltip(string.Format("MMU{0} ${1:X4}-${2:X4}: {3}", i, i * 0x2000, i * 0x2000 + 0x1fff,
+                    Tip(string.Format("MMU{0} ${1:X4}-${2:X4}: {3}", i, i * 0x2000, i * 0x2000 + 0x1fff,
                         s.Mmu[i] == 0xff ? "ROM" : "8K bank " + s.Mmu[i] + " (16K bank " + (s.Mmu[i] >> 1) + ")"));
             }
-            ImGui.TextColored(ColDim, s.Stopped ? "Double click a value to edit it" : "Break to edit registers");
+            TextCol(ColDim, s.Stopped ? "Double click a value to edit it" : "Break to edit registers");
         }
 
         void RegRow(MonitorSnapshot s, string _n1, int _v1, int _p1, string _n2, int _v2, int _p2)
@@ -729,7 +754,7 @@ namespace Monitor
         {
             ImGui.TableNextColumn();
             ImGui.AlignTextToFramePadding();
-            ImGui.TextColored(ColDim, _name);
+            TextCol(ColDim, _name);
             ImGui.TableNextColumn();
             if (RegEditName == _name && s.Stopped)
             {
@@ -744,11 +769,11 @@ namespace Monitor
                 return;
             }
             string text = "$" + _value.ToString(_digits == 4 ? "X4" : "X2");
-            if (_value != _prev) ImGui.TextColored(ColChanged, text); else ImGui.TextUnformatted(text);
+            if (_value != _prev) TextCol(ColChanged, text); else ImGui.TextUnformatted(text);
             if (ImGui.IsItemHovered())
             {
                 string label = _digits == 4 ? LabelForTooltip(s, _value) : null;
-                ImGui.SetTooltip(string.Format("{0} = ${1:X} = {2}{3}", _name, _value, _value, label != null ? "\n" + label : ""));
+                Tip(string.Format("{0} = ${1:X} = {2}{3}", _name, _value, _value, label != null ? "\n" + label : ""));
                 if (s.Stopped && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)) { RegEditName = _name; RegEditText = _value.ToString(_digits == 4 ? "X4" : "X2"); }
             }
         }
@@ -786,13 +811,13 @@ namespace Monitor
                 if (at == sp) ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(ColSP));
                 ImGui.TableNextColumn();
                 int off = at - sp; if (off > 0x8000) off -= 0x10000; if (off < -0x8000) off += 0x10000;
-                ImGui.TextColored(ColDim, (off == 0 ? "SP  " : (off > 0 ? "+" : "-") + Math.Abs(off).ToString("X2") + " ") + "$" + at.ToString("X4"));
+                TextCol(ColDim, (off == 0 ? "SP  " : (off > 0 ? "+" : "-") + Math.Abs(off).ToString("X2") + " ") + "$" + at.ToString("X4"));
                 ImGui.TableNextColumn();
                 bool changed = PrevMemory != null && (PrevMemory[at] != s.Memory[at] || PrevMemory[(at + 1) & 0xffff] != s.Memory[(at + 1) & 0xffff]);
                 string v = "$" + word.ToString("X4");
-                if (changed) ImGui.TextColored(ColChanged, v); else ImGui.TextUnformatted(v);
+                if (changed) TextCol(ColChanged, v); else ImGui.TextUnformatted(v);
                 ImGui.TableNextColumn();
-                if (s.StackLabels[i] != null) ImGui.TextColored(ColLabel, s.StackLabels[i]);
+                if (s.StackLabels[i] != null) TextCol(ColLabel, s.StackLabels[i]);
             }
             ImGui.EndTable();
             if (s.StopCount != stackScrolledFor) { stackScrolledFor = s.StopCount; ImGui.SetScrollY(0); }
@@ -828,7 +853,7 @@ namespace Monitor
             }
             if (!any)
             {
-                ImGui.TextDisabled("No memory windows open - turn one on from the Memory menu");
+                TextDim("No memory windows open - turn one on from the Memory menu");
                 Plugin.SetPhysicalWindow(0, 0);
             }
         }
@@ -868,7 +893,7 @@ namespace Monitor
                 m.ScrollTo = Math.Max(0, other);
                 if (m.Physical) m.Follow = 0;
             }
-            if (ImGui.IsItemHovered()) ImGui.SetTooltip("64K: what the CPU sees through the MMU\nPhysical: all 2MB, addressed as bank:offset (8K banks)");
+            if (ImGui.IsItemHovered()) Tip("64K: what the CPU sees through the MMU\nPhysical: all 2MB, addressed as bank:offset (8K banks)");
             ImGui.SameLine(0, S(16));
             ImGui.TextUnformatted("Follow");
             ImGui.SameLine();
@@ -903,7 +928,7 @@ namespace Monitor
                     firstRow = Math.Min(firstRow, row); lastRow = Math.Max(lastRow, row);
                     int a = row << 4;
                     // address: $XXXX in the 64K view, bank:$offset for physical memory
-                    ImGui.TextColored(ColDim, phys ? MonitorAddress.Format(a, true).PadLeft(9) : a.ToString("X4"));
+                    TextCol(ColDim, phys ? MonitorAddress.Format(a, true).PadLeft(9) : a.ToString("X4"));
                     ImGui.SameLine(0, charW * 2);
                     var ascii = new StringBuilder(16);
                     for (int i = 0; i < 16; i++)
@@ -923,7 +948,7 @@ namespace Monitor
                             else if (ImGui.IsItemDeactivated()) MemEditAddress = -1;
                             continue;
                         }
-                        if (v < 0) { ImGui.TextColored(ColDim, "--"); continue; }        // physical bytes not read yet
+                        if (v < 0) { TextCol(ColDim, "--"); continue; }        // physical bytes not read yet
                         int was = PrevByte(at, phys);
                         bool changed = was >= 0 && was != v;
                         bool pc = !phys && at == s.Regs.PC, sp = !phys && (at == s.Regs.SP || at == ((s.Regs.SP + 1) & 0xffff));
@@ -934,13 +959,13 @@ namespace Monitor
                         if (changed) ImGui.PopStyleColor();
                         if (ImGui.IsItemHovered())
                         {
-                            ImGui.SetTooltip(string.Format("{0}{1}: ${2:X2} = {2}{3}", MonitorAddress.Format(at, phys), OtherForm(s, at, phys), v,
+                            Tip(string.Format("{0}{1}: ${2:X2} = {2}{3}", MonitorAddress.Format(at, phys), OtherForm(s, at, phys), v,
                                 (v >= 32 && v < 127) ? "  '" + (char)v + "'" : ""));
                             if (s.Stopped && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)) { MemEditAddress = at; MemEditPhysical = phys; MemEditText = v.ToString("X2"); }
                         }
                     }
                     ImGui.SameLine(0, charW * 2);
-                    ImGui.TextColored(ColDim, ascii.ToString());
+                    TextCol(ColDim, ascii.ToString());
                 }
             }
             clipper.End();
@@ -998,7 +1023,7 @@ namespace Monitor
             bool active = ImGui.IsItemActive() || enter;
             if (ImGui.IsItemEdited()) { b.Selected = -1; b.Error = null; }
             if (ImGui.IsItemHovered() && !active)
-                ImGui.SetTooltip("$8000 hex, 32768 decimal, bank:offset for physical memory (8K banks, e.g. 10:$0000),\nor a symbol: main_loop, buffer+$20, table-2");
+                Tip("$8000 hex, 32768 decimal, bank:offset for physical memory (8K banks, e.g. 10:$0000),\nor a symbol: main_loop, buffer+$20, table-2");
             Vector2 boxMin = ImGui.GetItemRectMin(), boxMax = ImGui.GetItemRectMax();
 
             string name; int offset;
@@ -1067,7 +1092,7 @@ namespace Monitor
                         ImGui.SameLine(ImGui.GetStyle().WindowPadding.X);
                         ImGui.TextUnformatted(m.Name);
                         ImGui.SameLine(ImGui.GetStyle().WindowPadding.X + nameW + S(16));
-                        ImGui.TextColored(ColDim, MonitorAddress.Format(m.Address, m.Physical));
+                        TextCol(ColDim, MonitorAddress.Format(m.Address, m.Physical));
                         if (picked)
                         {
                             PickSymbol(_target, b, m, name);
@@ -1087,7 +1112,7 @@ namespace Monitor
                 ImGui.SetNextWindowBgAlpha(1.0f);
                 if (ImGui.Begin("##gotoerr" + _target, ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoSavedSettings |
                                 ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoFocusOnAppearing | ImGuiWindowFlags.NoNav | ImGuiWindowFlags.NoInputs))
-                    ImGui.TextColored(ColError, b.Error);
+                    TextCol(ColError, b.Error);
                 ImGui.End();
             }
         }
