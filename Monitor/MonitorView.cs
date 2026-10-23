@@ -85,8 +85,26 @@ namespace Monitor
         // ****************************************************************************************
         //  iWindow ImGui draw callback
         // ****************************************************************************************
+        /// <summary>Font size (Ctrl+mouse wheel), 1 = normal</summary>
+        internal float FontScale = 1.0f;
+        const float MIN_SCALE = 0.6f, MAX_SCALE = 3.0f;
+        static float CurrentScale = 1.0f;
+        /// <summary>A fixed pixel size, scaled with the font</summary>
+        static float S(float _pixels) { return _pixels * CurrentScale; }
+        /// <summary>Child window flags: no mouse wheel scrolling while Ctrl is held (Ctrl+wheel zooms)</summary>
+        static ImGuiWindowFlags WheelFlags() { return ImGui.GetIO().KeyCtrl ? ImGuiWindowFlags.NoScrollWithMouse : ImGuiWindowFlags.None; }
+
         public void Draw()
         {
+            // Ctrl+mouse wheel: font size (this window's own ImGui context, so only the Monitor changes)
+            ImGuiIOPtr io = ImGui.GetIO();
+            if (io.KeyCtrl && io.MouseWheel != 0)
+            {
+                FontScale = (float)Math.Round(Clamp(FontScale + (io.MouseWheel > 0 ? 0.1f : -0.1f), MIN_SCALE, MAX_SCALE), 1);
+            }
+            io.FontGlobalScale = FontScale;
+            CurrentScale = FontScale;
+
             MonitorSnapshot s = Plugin.Snapshot;
             if (s != null && s.StopCount != ShownStopCount)
             {
@@ -99,7 +117,8 @@ namespace Monitor
             ImGui.SetNextWindowPos(Vector2.Zero);
             ImGui.SetNextWindowSize(ImGui.GetIO().DisplaySize);
             ImGuiWindowFlags flags = ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize |
-                                     ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.NoBringToFrontOnFocus | ImGuiWindowFlags.NoScrollbar;
+                                     ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.NoBringToFrontOnFocus | ImGuiWindowFlags.NoScrollbar |
+                                     ImGuiWindowFlags.NoScrollWithMouse;
             bool open = true;
             if (ImGui.Begin("##Monitor", ref open, flags))
             {
@@ -117,26 +136,26 @@ namespace Monitor
         void DrawToolbar(MonitorSnapshot s)
         {
             bool stopped = s != null && s.Stopped;
-            if (stopped) { if (ImGui.Button("Run", new Vector2(70, 0))) Plugin.Run(); }
-            else { if (ImGui.Button("Break", new Vector2(70, 0))) Plugin.Break(); }
+            if (stopped) { if (ImGui.Button("Run", new Vector2(S(70), 0))) Plugin.Run(); }
+            else { if (ImGui.Button("Break", new Vector2(S(70), 0))) Plugin.Break(); }
             ImGui.SameLine();
             ImGui.BeginDisabled(!stopped);
-            if (ImGui.Button("Step", new Vector2(70, 0))) Plugin.Step();
+            if (ImGui.Button("Step", new Vector2(S(70), 0))) Plugin.Step();
             ImGui.SameLine();
-            if (ImGui.Button("Step Over", new Vector2(80, 0))) Plugin.StepOver();
+            if (ImGui.Button("Step Over", new Vector2(S(80), 0))) Plugin.StepOver();
             ImGui.SameLine();
-            if (ImGui.Button("Back", new Vector2(60, 0))) Plugin.StepBack();
+            if (ImGui.Button("Back", new Vector2(S(60), 0))) Plugin.StepBack();
             if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled)) ImGui.SetTooltip("Rewind the CPU one instruction");
             ImGui.EndDisabled();
-            ImGui.SameLine(0, 20);
+            ImGui.SameLine(0, S(20));
             if (ImGui.Button("Clear Breakpoints")) Plugin.ClearAllBreakpoints();
-            ImGui.SameLine(0, 20);
+            ImGui.SameLine(0, S(20));
             if (ImGui.Checkbox("Hide CSpect debugger", ref HideCSpectDebugger)) Plugin.SetRemote(HideCSpectDebugger);
             if (ImGui.IsItemHovered()) ImGui.SetTooltip("While stopped, show the game screen in the main window instead of CSpect's own debugger");
 
             if (s != null)
             {
-                ImGui.SameLine(0, 20);
+                ImGui.SameLine(0, S(20));
                 if (s.Stopped)
                 {
                     string label = LabelAt(s, s.Regs.PC);
@@ -176,10 +195,10 @@ namespace Monitor
             Splitter("##splitX", new Vector2(origin.X + leftW, origin.Y), new Vector2(SPLIT, H), true, ref SplitX, W);
 
             ImGui.SetCursorPos(new Vector2(rightX, origin.Y));
-            Pane("Registers", "##regs", new Vector2(rightW, rightTop), ImGuiWindowFlags.None, () => DrawRegisters(s));
+            Pane("Registers", "##regs", new Vector2(rightW, rightTop), WheelFlags(), () => DrawRegisters(s));
             Splitter("##splitRight", new Vector2(rightX, origin.Y + rightTop), new Vector2(rightW, SPLIT), false, ref SplitRightY, H);
             ImGui.SetCursorPos(new Vector2(rightX, origin.Y + rightTop + SPLIT));
-            Pane("Stack", "##stack", new Vector2(rightW, H - rightTop - SPLIT), ImGuiWindowFlags.None, () => DrawStack(s));
+            Pane("Stack", "##stack", new Vector2(rightW, H - rightTop - SPLIT), WheelFlags(), () => DrawStack(s));
         }
 
         static float Clamp(float v, float lo, float hi) { return Math.Max(lo, Math.Min(hi, v)); }
@@ -326,7 +345,7 @@ namespace Monitor
 
         void DrawDisassembly(MonitorSnapshot s)
         {
-            ImGui.SameLine(0, 16);
+            ImGui.SameLine(0, S(16));
             ImGui.AlignTextToFramePadding();
             ImGui.TextUnformatted("Goto");
             ImGui.SameLine();
@@ -337,7 +356,7 @@ namespace Monitor
             if (ImGui.Button("PC")) Plugin.DisasmFollowPC();
             ImGui.EndDisabled();
             if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled)) ImGui.SetTooltip(follow ? "Following PC" : "Follow PC again");
-            ImGui.SameLine(0, 16);
+            ImGui.SameLine(0, S(16));
             ImGui.Checkbox("Symbols", ref ShowSymbols);
             if (ImGui.IsItemHovered()) ImGui.SetTooltip("Show each line's label instead of its address and bytes\n(hover a line for its address)");
 
@@ -348,7 +367,7 @@ namespace Monitor
             if (ImGui.IsWindowHovered())
             {
                 float wheel = ImGui.GetIO().MouseWheel;
-                if (wheel != 0) Plugin.DisasmScrollBy(wheel > 0 ? -3 : 3);
+                if (wheel != 0 && !ImGui.GetIO().KeyCtrl) Plugin.DisasmScrollBy(wheel > 0 ? -3 : 3);
             }
 
             // Symbols: [gutter][label][instruction] - the label on the instruction's own line
@@ -357,7 +376,7 @@ namespace Monitor
             int textCol = sym ? 2 : 3;
             ImGuiTableFlags tf = ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoPadOuterX;
             if (!ImGui.BeginTable(sym ? "##dissym" : "##dis", sym ? 3 : 4, tf)) return;
-            ImGui.TableSetupColumn("bp", ImGuiTableColumnFlags.WidthFixed, 14);
+            ImGui.TableSetupColumn("bp", ImGuiTableColumnFlags.WidthFixed, S(14));
             if (sym)
             {
                 // a fixed SYMBOL_CHARS wide column (longer labels are cropped), so the instructions always line up
@@ -419,11 +438,11 @@ namespace Monitor
                 // gutter: breakpoint marker, click to toggle (after the row selectable, so it gets the click)
                 ImGui.TableSetColumnIndex(0);
                 Vector2 p = ImGui.GetCursorScreenPos();
-                if (ImGui.InvisibleButton("##bp" + id, new Vector2(14, ImGui.GetTextLineHeight()))) Plugin.ToggleBreakpoint(l.Address, l.Physical);
+                if (ImGui.InvisibleButton("##bp" + id, new Vector2(S(14), ImGui.GetTextLineHeight()))) Plugin.ToggleBreakpoint(l.Address, l.Physical);
                 if (l.Breakpoint)
-                    ImGui.GetWindowDrawList().AddCircleFilled(p + new Vector2(7, ImGui.GetTextLineHeight() * 0.5f), 5, ImGui.GetColorU32(ColBreakpoint));
+                    ImGui.GetWindowDrawList().AddCircleFilled(p + new Vector2(S(7), ImGui.GetTextLineHeight() * 0.5f), S(5), ImGui.GetColorU32(ColBreakpoint));
                 else if (ImGui.IsItemHovered())
-                    ImGui.GetWindowDrawList().AddCircle(p + new Vector2(7, ImGui.GetTextLineHeight() * 0.5f), 5, ImGui.GetColorU32(ColBreakpoint));
+                    ImGui.GetWindowDrawList().AddCircle(p + new Vector2(S(7), ImGui.GetTextLineHeight() * 0.5f), S(5), ImGui.GetColorU32(ColBreakpoint));
 
                 if (!sym)
                 {
@@ -494,7 +513,7 @@ namespace Monitor
             ImGui.BeginGroup();
             for (int p = 0; p < parts.Count; p++)
             {
-                if (p > 0) ImGui.SameLine(0, 0);
+                if (p > 0) ImGui.SameLine(0, S(0));
                 ImGui.PushStyleColor(ImGuiCol.Text, parts[p].Value);
                 ImGui.TextUnformatted(parts[p].Key);
                 ImGui.PopStyleColor();
@@ -510,10 +529,10 @@ namespace Monitor
         {
             Z80Regs r = s.Regs, p = PrevRegs ?? s.Regs;
             if (!ImGui.BeginTable("##regs", 4, ImGuiTableFlags.SizingFixedFit)) return;
-            ImGui.TableSetupColumn("n1", ImGuiTableColumnFlags.WidthFixed, 34);
-            ImGui.TableSetupColumn("v1", ImGuiTableColumnFlags.WidthFixed, 70);
-            ImGui.TableSetupColumn("n2", ImGuiTableColumnFlags.WidthFixed, 34);
-            ImGui.TableSetupColumn("v2", ImGuiTableColumnFlags.WidthFixed, 70);
+            ImGui.TableSetupColumn("n1", ImGuiTableColumnFlags.WidthFixed, S(34));
+            ImGui.TableSetupColumn("v1", ImGuiTableColumnFlags.WidthFixed, S(70));
+            ImGui.TableSetupColumn("n2", ImGuiTableColumnFlags.WidthFixed, S(34));
+            ImGui.TableSetupColumn("v2", ImGuiTableColumnFlags.WidthFixed, S(70));
 
             RegRow(s, "AF", r.AF, p.AF, "AF'", r._AF, p._AF);
             RegRow(s, "BC", r.BC, p.BC, "BC'", r._BC, p._BC);
@@ -543,7 +562,7 @@ namespace Monitor
                 ImGui.PushStyleColor(ImGuiCol.Text, changed ? ColChanged : (on ? ColNormal : ColDim));
                 ImGui.BeginDisabled(!s.Stopped);
                 int mask = 1 << bit;
-                if (ImGui.Button(names[bit] + "##f" + bit, new Vector2(20, 0))) Plugin.SetRegisters(x => x.AF = (ushort)(x.AF ^ mask));
+                if (ImGui.Button(names[bit] + "##f" + bit, new Vector2(S(20), 0))) Plugin.SetRegisters(x => x.AF = (ushort)(x.AF ^ mask));
                 ImGui.EndDisabled();
                 ImGui.PopStyleColor(2);
             }
@@ -619,7 +638,7 @@ namespace Monitor
         void DrawStack(MonitorSnapshot s)
         {
             int sp = s.Regs.SP;
-            if (!ImGui.BeginTable("##stack", 3, ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.ScrollY | ImGuiTableFlags.RowBg)) return;
+            if (!ImGui.BeginTable("##stack", 3, ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.RowBg)) return;
             ImGui.TableSetupColumn("addr", ImGuiTableColumnFlags.WidthFixed);
             ImGui.TableSetupColumn("value", ImGuiTableColumnFlags.WidthFixed);
             ImGui.TableSetupColumn("label", ImGuiTableColumnFlags.WidthStretch);
@@ -640,8 +659,8 @@ namespace Monitor
                 ImGui.TableNextColumn();
                 if (s.StackLabels[i] != null) ImGui.TextColored(ColLabel, s.StackLabels[i]);
             }
-            if (s.StopCount != stackScrolledFor) { stackScrolledFor = s.StopCount; ImGui.SetScrollY(0); }
             ImGui.EndTable();
+            if (s.StopCount != stackScrolledFor) { stackScrolledFor = s.StopCount; ImGui.SetScrollY(0); }
         }
         int stackScrolledFor = -1;
 
@@ -651,14 +670,14 @@ namespace Monitor
         // ****************************************************************************************
         void DrawMemory(MonitorSnapshot s)
         {
-            ImGui.SameLine(0, 16);
+            ImGui.SameLine(0, S(16));
             ImGui.AlignTextToFramePadding();
             ImGui.TextUnformatted("Goto");
             ImGui.SameLine();
             DrawGotoBox(s, MonitorPlugin.TargetMemory);
-            ImGui.SameLine(0, 16);
+            ImGui.SameLine(0, S(16));
             int space = MemPhysical ? 1 : 0;
-            ImGui.SetNextItemWidth(90);
+            ImGui.SetNextItemWidth(S(90));
             if (ImGui.Combo("##memspace", ref space, SpaceNames, SpaceNames.Length) && (space == 1) != MemPhysical)
             {
                 // switch view, staying on the same memory if it's paged in
@@ -668,10 +687,10 @@ namespace Monitor
                 if (MemPhysical) MemFollow = 0;
             }
             if (ImGui.IsItemHovered()) ImGui.SetTooltip("64K: what the CPU sees through the MMU\nPhysical: all 2MB, addressed as bank:offset (8K banks)");
-            ImGui.SameLine(0, 16);
+            ImGui.SameLine(0, S(16));
             ImGui.TextUnformatted("Follow");
             ImGui.SameLine();
-            ImGui.SetNextItemWidth(70);
+            ImGui.SetNextItemWidth(S(70));
             if (ImGui.Combo("##memfollow", ref MemFollow, FollowNames, FollowNames.Length)) { MemFollowLast = -1; if (MemFollow != 0) MemPhysical = false; }
 
             if (MemFollow != 0)
@@ -680,7 +699,7 @@ namespace Monitor
                 if (target != MemFollowLast) { MemScrollTo = target; MemFollowLast = target; }
             }
 
-            if (!ImGui.BeginChild("##memrows", Vector2.Zero, ImGuiChildFlags.None, ImGuiWindowFlags.None)) { ImGui.EndChild(); return; }
+            if (!ImGui.BeginChild("##memrows", Vector2.Zero, ImGuiChildFlags.None, WheelFlags())) { ImGui.EndChild(); return; }
             float lineH = ImGui.GetTextLineHeightWithSpacing();
             if (MemScrollTo >= 0)
             {
@@ -792,7 +811,7 @@ namespace Monitor
         void DrawGotoBox(MonitorSnapshot s, int _target)
         {
             GotoBox b = Boxes[_target];
-            ImGui.SetNextItemWidth(130);
+            ImGui.SetNextItemWidth(S(130));
             bool enter = ImGui.InputText("##goto" + _target, ref b.Text, 64, ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.AutoSelectAll | ImGuiInputTextFlags.CharsNoBlank);
             // Enter deactivates the box in the same frame - it still counts as typing in it here
             bool active = ImGui.IsItemActive() || enter;
@@ -842,12 +861,12 @@ namespace Monitor
                     for (int i = 0; i < matches.Length; i++)
                     {
                         SymbolMatch m = matches[i];
-                        if (ImGui.Selectable(m.Name + "##sym" + i, i == b.Selected, ImGuiSelectableFlags.None, new Vector2(200, 0)))
+                        if (ImGui.Selectable(m.Name + "##sym" + i, i == b.Selected, ImGuiSelectableFlags.None, new Vector2(S(200), 0)))
                         {
                             PickSymbol(_target, b, m, name);
                             keep = false;
                         }
-                        ImGui.SameLine(210);
+                        ImGui.SameLine(S(210));
                         ImGui.TextColored(ColDim, MonitorAddress.Format(m.Address, m.Physical));
                     }
                 }
