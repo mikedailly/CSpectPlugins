@@ -33,7 +33,7 @@ namespace Monitor
         static readonly Vector4 ColFlagOff = new Vector4(0.13f, 0.15f, 0.19f, 1.0f);
         static readonly Vector4 ColNormal = new Vector4(1.0f, 1.0f, 1.0f, 1.0f);
         static readonly Vector4 ColHex = new Vector4(1.00f, 0.88f, 0.35f, 1.0f);
-        static readonly Vector4 ColUserBar = Abgr(0xffB700B7);         // magenta
+        static readonly Vector4 ColUserBar = Abgr(0xffB7B700);         // teal
         static readonly Vector4 ColTStates = new Vector4(0.50f, 0.50f, 0.50f, 1.0f);      // medium grey
         static readonly Vector4 ColStopped = new Vector4(1.00f, 0.75f, 0.30f, 1.0f);
 
