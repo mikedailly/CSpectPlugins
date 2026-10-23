@@ -70,6 +70,9 @@ namespace Monitor
             public int Selected = -1;
             /// <summary>Mouse over the suggestion list last frame (keeps it open while clicking)</summary>
             public bool ListHovered;
+            /// <summary>Where the suggestion list was last frame (screen) - hover is tested against this rather than with
+            /// IsWindowHovered, which an active text box can block</summary>
+            public Vector2 ListMin, ListMax;
             public string Error;
             public double ErrorTime;
         }
@@ -1000,6 +1003,8 @@ namespace Monitor
 
             string name; int offset;
             bool symbolish = MonitorAddress.TrySplitSymbol(b.Text, out name, out offset);
+            // keep the list while the mouse is over it (it was there last frame) - clicking it takes focus off the box
+            if (b.ListHovered) b.ListHovered = ImGui.IsMouseHoveringRect(b.ListMin, b.ListMax, false);
             bool wanted = (active || b.ListHovered) && symbolish;
             Plugin.SetSymbolQuery(_target, wanted ? b.Text : null);
             SymbolMatch[] matches = (wanted && s.SymbolQuery[_target] == b.Text) ? s.SymbolMatches[_target] : null;
@@ -1028,24 +1033,47 @@ namespace Monitor
 
             if (open)
             {
-                ImGui.SetNextWindowPos(new Vector2(boxMin.X, boxMax.Y + 2));
+                // below the box, or above it if there's more room there (the memory box is near the bottom)
+                float lineH = ImGui.GetTextLineHeightWithSpacing();
+                float wantH = matches.Length * lineH + ImGui.GetStyle().WindowPadding.Y * 2;
+                float display = ImGui.GetIO().DisplaySize.Y;
+                float below = display - boxMax.Y - 4, above = boxMin.Y - 4;
+                bool up = wantH > below && above > below;
+                if (up) ImGui.SetNextWindowPos(new Vector2(boxMin.X, boxMin.Y - 2), ImGuiCond.Always, new Vector2(0, 1));
+                else ImGui.SetNextWindowPos(new Vector2(boxMin.X, boxMax.Y + 2));
+                ImGui.SetNextWindowSizeConstraints(Vector2.Zero, new Vector2(float.MaxValue, Math.Max(lineH * 3, up ? above : below)));
                 ImGui.SetNextWindowBgAlpha(1.0f);
                 ImGuiWindowFlags lf = ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoSavedSettings |
                                       ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoFocusOnAppearing | ImGuiWindowFlags.NoNav;
                 bool keep = false;
                 if (ImGui.Begin("##symbols" + _target, lf))
                 {
-                    keep = ImGui.IsWindowHovered();
+                    Vector2 wp = ImGui.GetWindowPos();
+                    b.ListMin = wp; b.ListMax = wp + ImGui.GetWindowSize();
+                    keep = ImGui.IsMouseHoveringRect(b.ListMin, b.ListMax, false);
+                    // name column as wide as the longest name (up to a limit), then the address; the whole row is clickable
+                    float nameW = S(120);
+                    foreach (SymbolMatch m in matches) nameW = Math.Max(nameW, ImGui.CalcTextSize(m.Name).X);
+                    nameW = Math.Min(nameW, S(360));
+                    float rowW = nameW + S(16) + ImGui.CalcTextSize("255:$1FFF").X;
                     for (int i = 0; i < matches.Length; i++)
                     {
                         SymbolMatch m = matches[i];
-                        if (ImGui.Selectable(m.Name + "##sym" + i, i == b.Selected, ImGuiSelectableFlags.None, new Vector2(S(200), 0)))
+                        bool picked = ImGui.Selectable("##sym" + i, i == b.Selected, ImGuiSelectableFlags.AllowOverlap, new Vector2(rowW, 0));
+                        // take the click on the press, by position: the text box is still active then and can stop
+                        // the list seeing it as hovered
+                        Vector2 rmin = ImGui.GetItemRectMin(), rmax = ImGui.GetItemRectMax();
+                        if (!picked && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && ImGui.IsMouseHoveringRect(rmin, rmax, false)) picked = true;
+                        ImGui.SameLine(ImGui.GetStyle().WindowPadding.X);
+                        ImGui.TextUnformatted(m.Name);
+                        ImGui.SameLine(ImGui.GetStyle().WindowPadding.X + nameW + S(16));
+                        ImGui.TextColored(ColDim, MonitorAddress.Format(m.Address, m.Physical));
+                        if (picked)
                         {
                             PickSymbol(_target, b, m, name);
                             keep = false;
+                            break;
                         }
-                        ImGui.SameLine(S(210));
-                        ImGui.TextColored(ColDim, MonitorAddress.Format(m.Address, m.Physical));
                     }
                 }
                 ImGui.End();
