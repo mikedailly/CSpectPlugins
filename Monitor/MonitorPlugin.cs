@@ -458,7 +458,7 @@ namespace Monitor
                 if (phys)
                 {
                     line.Bytes = CSpect.PeekPhysical(a, len);
-                    line.Breakpoint = CSpect.Debugger(eDebugCommand.GetPhysicalBreakpoint, a) != 0;
+                    line.Breakpoint = line.PhysicalBreakpoint = CSpect.Debugger(eDebugCommand.GetPhysicalBreakpoint, a) != 0;
                     int logical = s.ToLogical(a);                       // labels only for banks paged in right now
                     line.Label = logical >= 0 ? Label(logical) : null;
                 }
@@ -468,8 +468,9 @@ namespace Monitor
                     for (int b = 0; b < len; b++) line.Bytes[b] = s.Memory[(a + b) & 0xffff];
                     // a 64K breakpoint, or a physical one on the bank paged in here
                     int pa = s.ToPhysical(a);
-                    line.Breakpoint = CSpect.Debugger(eDebugCommand.GetBreakpoint, a) != 0 ||
-                                      (pa >= 0 && CSpect.Debugger(eDebugCommand.GetPhysicalBreakpoint, pa) != 0);
+                    bool bp64 = CSpect.Debugger(eDebugCommand.GetBreakpoint, a) != 0;
+                    line.PhysicalBreakpoint = !bp64 && pa >= 0 && CSpect.Debugger(eDebugCommand.GetPhysicalBreakpoint, pa) != 0;
+                    line.Breakpoint = bp64 || line.PhysicalBreakpoint;
                     line.Label = Label(a);
                 }
                 line.Text = MarkLocalLabels(line.Text, phys ? s.ToLogical(a) : a, line.Bytes);

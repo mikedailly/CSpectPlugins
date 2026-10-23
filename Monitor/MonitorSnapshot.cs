@@ -28,6 +28,8 @@ namespace Monitor
         public string Label;
         /// <summary>Is there a breakpoint here?</summary>
         public bool Breakpoint;
+        /// <summary>...and is it only a physical (bank:offset) one? (drawn darker than a 64K one)</summary>
+        public bool PhysicalBreakpoint;
         /// <summary>T-States (and the "branch taken" count, or 0)</summary>
         public int TStates1, TStates2;
     }

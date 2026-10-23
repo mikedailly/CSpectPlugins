@@ -20,6 +20,8 @@ namespace Monitor
         static readonly Vector4 ColPCRow = new Vector4(0.55f, 0.45f, 0.05f, 1.0f);
         static readonly Vector4 ColBreakpoint = new Vector4(0.90f, 0.20f, 0.20f, 1.0f);
         static readonly Vector4 ColBreakpointRow = new Vector4(0.62f, 0.10f, 0.10f, 1.0f);
+        static readonly Vector4 ColPhysBreakpointRow = new Vector4(0.36f, 0.05f, 0.05f, 1.0f);   // darker: physical (bank:offset)
+        static readonly Vector4 ColPhysBreakpoint = new Vector4(0.55f, 0.10f, 0.10f, 1.0f);
         static readonly Vector4 ColChanged = new Vector4(1.00f, 0.45f, 0.35f, 1.0f);
         static readonly Vector4 ColLabel = new Vector4(0.45f, 0.80f, 1.00f, 1.0f);
         static readonly Vector4 ColDim = new Vector4(0.55f, 0.58f, 0.65f, 1.0f);
@@ -443,7 +445,7 @@ namespace Monitor
                 // breakpoints are a red bar; PC sitting on one shows the PC bar with a red dot in the gutter
                 bool atPC = s.Stopped && logical == s.Regs.PC;
                 if (atPC) ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(ColPCRow));
-                else if (l.Breakpoint) ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(ColBreakpointRow));
+                else if (l.Breakpoint) ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(l.PhysicalBreakpoint ? ColPhysBreakpointRow : ColBreakpointRow));
                 if (l.Address == BarAddress && l.Physical == BarPhysical) ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg1, ImGui.GetColorU32(ColUserBar));
 
                 ImGui.TableSetColumnIndex(1);
@@ -478,7 +480,7 @@ namespace Monitor
                 Vector2 p = ImGui.GetCursorScreenPos();
                 if (ImGui.InvisibleButton("##bp" + id, new Vector2(S(14), ImGui.GetTextLineHeight()))) Plugin.ToggleLineBreakpoint(l.Address, l.Physical);
                 if (l.Breakpoint && atPC)
-                    ImGui.GetWindowDrawList().AddCircleFilled(p + new Vector2(S(7), ImGui.GetTextLineHeight() * 0.5f), S(5), ImGui.GetColorU32(ColBreakpoint));
+                    ImGui.GetWindowDrawList().AddCircleFilled(p + new Vector2(S(7), ImGui.GetTextLineHeight() * 0.5f), S(5), ImGui.GetColorU32(l.PhysicalBreakpoint ? ColPhysBreakpoint : ColBreakpoint));
                 else if (!l.Breakpoint && ImGui.IsItemHovered())
                     ImGui.GetWindowDrawList().AddCircle(p + new Vector2(S(7), ImGui.GetTextLineHeight() * 0.5f), S(5), ImGui.GetColorU32(ColBreakpoint));
 
