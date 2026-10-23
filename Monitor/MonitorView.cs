@@ -270,7 +270,11 @@ namespace Monitor
                 {
                     ImGui.TableNextRow();
                     ImGui.TableSetColumnIndex(3);
-                    ImGui.TextColored(ColLabel, l.Label + ":");
+                    // a local label ("MAINLOOP@SKIPPRINT") shows as "@SKIPPRINT", as in the operands
+                    int at = l.Label.IndexOf('@');
+                    ImGui.PushStyleColor(ImGuiCol.Text, ColLabel);
+                    ImGui.TextUnformatted((at > 0 ? l.Label.Substring(at) : l.Label) + ":");
+                    ImGui.PopStyleColor();
                 }
                 // the 64K address of this line (physical lines only have one while their bank is paged in)
                 int logical = l.Physical ? s.ToLogical(l.Address) : l.Address;

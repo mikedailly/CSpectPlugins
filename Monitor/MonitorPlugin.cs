@@ -437,6 +437,7 @@ namespace Monitor
                     line.Breakpoint = CSpect.Debugger(eDebugCommand.GetBreakpoint, a) != 0;
                     line.Label = Label(a);
                 }
+                line.Text = MarkLocalLabels(line.Text, phys ? s.ToLogical(a) : a, line.Bytes);
                 dis[i] = line;
                 a = Wrap(a + len, phys);
             }
@@ -462,6 +463,40 @@ namespace Monitor
                 s.StackLabels[i] = Label(word);
             }
             return s;
+        }
+
+        // ******************************************************************************************
+        /// <summary>
+        ///     CSpect writes a local label operand (symbol "MAINLOOP@SKIPPRINT") as just "SKIPPRINT".
+        ///     Put the '@' back - "@SKIPPRINT" - by looking up the full symbol at the instruction's target
+        ///     (a 16-bit operand, or a relative jump's destination).
+        /// </summary>
+        /// <param name="_text">Instruction text from CSpect</param>
+        /// <param name="_address">64k address of the instruction (-1 if not paged in)</param>
+        /// <param name="_bytes">The instruction bytes</param>
+        // ******************************************************************************************
+        string MarkLocalLabels(string _text, int _address, byte[] _bytes)
+        {
+            int len = _bytes.Length;
+            var targets = new List<int>();
+            if (len >= 3)
+            {
+                targets.Add(_bytes[len - 2] | (_bytes[len - 1] << 8));          // nn
+                targets.Add((_bytes[len - 2] << 8) | _bytes[len - 1]);          // PUSH nn (big endian)
+            }
+            if (len == 2 && _address >= 0) targets.Add((_address + 2 + (sbyte)_bytes[1]) & 0xffff);   // JR/DJNZ e
+            foreach (int t in targets)
+            {
+                string full = Label(t);
+                if (full == null) continue;
+                int at = full.IndexOf('@');
+                if (at < 0 || at == full.Length - 1) continue;
+                string local = full.Substring(at + 1);
+                string marked = System.Text.RegularExpressions.Regex.Replace(_text,
+                    @"(?<![\w@.!])" + System.Text.RegularExpressions.Regex.Escape(local) + @"(?![\w@.!])", "@" + local);
+                if (marked != _text) return marked;
+            }
+            return _text;
         }
 
         string Label(int _address)
