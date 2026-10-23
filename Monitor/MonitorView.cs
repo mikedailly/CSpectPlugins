@@ -19,7 +19,7 @@ namespace Monitor
     {
         /// <summary>An ABGR colour (ImGui's own packing, 0xAABBGGRR) as a Vector4</summary>
         static Vector4 Abgr(uint _c) { return new Vector4((_c & 0xff) / 255f, ((_c >> 8) & 0xff) / 255f, ((_c >> 16) & 0xff) / 255f, (_c >> 24) / 255f); }
-        static readonly Vector4 ColPCRow = Abgr(0xffB60000);           // blue
+        static readonly Vector4 ColPCRow = Abgr(0xff0000B6);           // red
         static readonly Vector4 ColBreakpoint = new Vector4(0.90f, 0.20f, 0.20f, 1.0f);
         static readonly Vector4 ColBreakpointRow = new Vector4(0.62f, 0.10f, 0.10f, 1.0f);
         static readonly Vector4 ColPhysBreakpointRow = new Vector4(0.36f, 0.05f, 0.05f, 1.0f);   // darker: physical (bank:offset)
@@ -33,7 +33,7 @@ namespace Monitor
         static readonly Vector4 ColFlagOff = new Vector4(0.13f, 0.15f, 0.19f, 1.0f);
         static readonly Vector4 ColNormal = new Vector4(1.0f, 1.0f, 1.0f, 1.0f);
         static readonly Vector4 ColHex = new Vector4(1.00f, 0.88f, 0.35f, 1.0f);
-        static readonly Vector4 ColUserBar = Abgr(0xff00B7B7);         // yellow
+        static readonly Vector4 ColUserBar = Abgr(0xffB7B700);         // teal
         static readonly Vector4 ColTStates = new Vector4(0.50f, 0.50f, 0.50f, 1.0f);      // medium grey
         static readonly Vector4 ColStopped = new Vector4(1.00f, 0.75f, 0.30f, 1.0f);
 
