@@ -54,8 +54,10 @@ namespace Monitor
         byte[] PrevMemory;
         int ShownStopCount = -1;
 
-        /// <summary>The two Goto boxes (disassembly, memory)</summary>
-        readonly GotoBox[] Boxes = { new GotoBox(), new GotoBox() };
+        /// <summary>The disassembly's Goto box (each memory window has its own)</summary>
+        readonly GotoBox DisasmBox = new GotoBox();
+        /// <summary>Last symbol Goto result seen, per target (disassembly, memory)</summary>
+        readonly int[] SeenGoto = new int[2];
         static readonly Vector4 ColError = new Vector4(1.0f, 0.35f, 0.35f, 1.0f);
 
         sealed class GotoBox
@@ -65,16 +67,27 @@ namespace Monitor
             public int Selected = -1;
             /// <summary>Mouse over the suggestion list last frame (keeps it open while clicking)</summary>
             public bool ListHovered;
-            public int SeenSequence;
             public string Error;
             public double ErrorTime;
         }
-        int MemFollow = 0;
-        int MemFollowLast = -1;
-        int MemScrollTo = -1;
-        /// <summary>Memory pane shows physical memory (addresses bank:offset) rather than the CPU's 64K</summary>
-        bool MemPhysical;
-        int MemTopAddress;
+        // ---- memory windows: up to 4, shown as tabs in the memory pane ----
+        sealed class MemView
+        {
+            public bool Enabled;
+            public int Follow = 0;
+            public int FollowLast = -1;
+            public int ScrollTo = -1;
+            /// <summary>Shows physical memory (addresses bank:offset) rather than the CPU's 64K</summary>
+            public bool Physical;
+            public int TopAddress;
+            public readonly GotoBox Box = new GotoBox();
+        }
+        internal const int MEM_VIEWS = 4;
+        readonly MemView[] Mems = { new MemView { Enabled = true }, new MemView(), new MemView(), new MemView() };
+        /// <summary>The memory tab on show</summary>
+        int ActiveMem = 0;
+        /// <summary>Bring this memory tab to the front next frame (-1 = none)</summary>
+        int SelectMem = -1;
         bool MemEditPhysical;
         byte[] PrevPhys;
         int PrevPhysStart;
@@ -122,10 +135,11 @@ namespace Monitor
             ImGui.SetNextWindowSize(ImGui.GetIO().DisplaySize);
             ImGuiWindowFlags flags = ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize |
                                      ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.NoBringToFrontOnFocus | ImGuiWindowFlags.NoScrollbar |
-                                     ImGuiWindowFlags.NoScrollWithMouse;
+                                     ImGuiWindowFlags.NoScrollWithMouse | ImGuiWindowFlags.MenuBar;
             bool open = true;
             if (ImGui.Begin("##Monitor", ref open, flags))
             {
+                DrawMenu(s);
                 FunctionKeys(s);
                 DrawToolbar(s);
                 ImGui.Separator();
@@ -133,6 +147,51 @@ namespace Monitor
                 else DrawPanes(s);
             }
             ImGui.End();
+        }
+
+        // ****************************************************************************************
+        //  Menu bar: Debug and Memory
+        // ****************************************************************************************
+        void DrawMenu(MonitorSnapshot s)
+        {
+            if (!ImGui.BeginMenuBar()) return;
+            bool stopped = s != null && s.Stopped;
+            if (ImGui.BeginMenu("Debug"))
+            {
+                if (ImGui.MenuItem("Run", "F1", false, s != null && stopped)) Plugin.Run();
+                if (ImGui.MenuItem("Break", "F1", false, s != null && !stopped)) Plugin.Break();
+                ImGui.Separator();
+                if (ImGui.MenuItem("Step", "F7", false, stopped)) Plugin.Step();
+                if (ImGui.MenuItem("Step Over", "F8", false, stopped)) Plugin.StepOver();
+                if (ImGui.MenuItem("Step Back", null, false, stopped)) Plugin.StepBack();
+                ImGui.Separator();
+                if (ImGui.MenuItem("Goto PC")) Plugin.DisasmFollowPC();
+                if (ImGui.MenuItem("Toggle Breakpoint", "F9", false, s != null)) ToggleBarBreakpoint(s);
+                if (ImGui.MenuItem("Clear Breakpoints")) Plugin.ClearAllBreakpoints();
+                ImGui.EndMenu();
+            }
+            if (ImGui.BeginMenu("Memory"))
+            {
+                for (int i = 0; i < MEM_VIEWS; i++)
+                {
+                    bool on = Mems[i].Enabled;
+                    if (ImGui.MenuItem("Memory " + (i + 1), null, ref on))
+                    {
+                        Mems[i].Enabled = on;
+                        if (on) SelectMem = i;
+                    }
+                }
+                ImGui.EndMenu();
+            }
+            ImGui.EndMenuBar();
+        }
+
+        /// <summary>F9 / Debug menu: breakpoint on the user bar, or on PC if there's no bar</summary>
+        void ToggleBarBreakpoint(MonitorSnapshot s)
+        {
+            int bi = BarIndex(s);
+            if (bi >= 0) Plugin.ToggleLineBreakpoint(s.Disasm[bi].Address, s.Disasm[bi].Physical);
+            else Plugin.ToggleLineBreakpoint(s.Regs.PC, false);
         }
 
         // ****************************************************************************************
@@ -149,12 +208,7 @@ namespace Monitor
             bool f7 = ImGui.IsKeyPressed(ImGuiKey.F7), f8 = ImGui.IsKeyPressed(ImGuiKey.F8), f9 = ImGui.IsKeyPressed(ImGuiKey.F9, false);
             if (f7 && s.Stopped) Plugin.Step();
             else if (f8 && s.Stopped) Plugin.StepOver();
-            else if (f9)
-            {
-                int bi = BarIndex(s);
-                if (bi >= 0) Plugin.ToggleLineBreakpoint(s.Disasm[bi].Address, s.Disasm[bi].Physical);
-                else Plugin.ToggleLineBreakpoint(s.Regs.PC, false);
-            }
+            else if (f9) ToggleBarBreakpoint(s);
         }
 
         // ****************************************************************************************
@@ -221,7 +275,7 @@ namespace Monitor
             Pane("Disassembly", "##disasm", new Vector2(leftW, leftTop), ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse, () => DrawDisassembly(s));
             Splitter("##splitLeft", new Vector2(origin.X, origin.Y + leftTop), new Vector2(leftW, SPLIT), false, ref SplitLeftY, H);
             ImGui.SetCursorPos(new Vector2(origin.X, origin.Y + leftTop + SPLIT));
-            Pane("Memory", "##memory", new Vector2(leftW, H - leftTop - SPLIT), ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse, () => DrawMemory(s));
+            Pane(null, "##memory", new Vector2(leftW, H - leftTop - SPLIT), ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse, () => DrawMemory(s));
 
             Splitter("##splitX", new Vector2(origin.X + leftW, origin.Y), new Vector2(SPLIT, H), true, ref SplitX, W);
 
@@ -238,7 +292,7 @@ namespace Monitor
         {
             if (ImGui.BeginChild(_id, _size, ImGuiChildFlags.Borders, _flags))
             {
-                ImGui.TextColored(ColLabel, _title);
+                if (_title != null) ImGui.TextColored(ColLabel, _title);
                 _body();
             }
             ImGui.EndChild();
@@ -380,7 +434,7 @@ namespace Monitor
             ImGui.AlignTextToFramePadding();
             ImGui.TextUnformatted("Goto");
             ImGui.SameLine();
-            DrawGotoBox(s, MonitorPlugin.TargetDisasm);
+            DrawGotoBox(s, MonitorPlugin.TargetDisasm, DisasmBox);
             ImGui.SameLine();
             bool follow = Plugin.IsFollowingPC;
             ImGui.BeginDisabled(follow);
@@ -466,7 +520,7 @@ namespace Monitor
                     if (logical >= 0 && ImGui.MenuItem("Set/clear 64K breakpoint ($" + logical.ToString("X4") + ", any bank)")) Plugin.ToggleBreakpoint(logical, false);
                     if (ImGui.MenuItem("Run to here", null, false, s.Stopped && logical >= 0)) Plugin.RunTo(logical);
                     if (ImGui.MenuItem("Set PC here", null, false, s.Stopped && logical >= 0)) { int pcTo = logical; Plugin.SetRegisters(r => r.PC = (ushort)pcTo); }
-                    if (ImGui.MenuItem("Show in memory")) { MemPhysical = l.Physical; MemScrollTo = l.Address; MemFollow = 0; }
+                    if (ImGui.MenuItem("Show in memory")) ShowInMemory(l.Address, l.Physical);
                     ImGui.EndPopup();
                 }
                 if (ImGui.IsItemHovered() && !ImGui.IsPopupOpen("", ImGuiPopupFlags.AnyPopupId))
@@ -718,44 +772,91 @@ namespace Monitor
         // ****************************************************************************************
         void DrawMemory(MonitorSnapshot s)
         {
-            ImGui.SameLine(0, S(16));
+            bool any = false;
+            if (ImGui.BeginTabBar("##memtabs", ImGuiTabBarFlags.None))
+            {
+                for (int i = 0; i < MEM_VIEWS; i++)
+                {
+                    MemView m = Mems[i];
+                    if (!m.Enabled) continue;
+                    any = true;
+                    bool open = true;
+                    ImGuiTabItemFlags tf = SelectMem == i ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None;
+                    if (ImGui.BeginTabItem("Memory " + (i + 1) + "##mem" + i, ref open, tf))
+                    {
+                        if (ActiveMem != i) { ActiveMem = i; MemEditAddress = -1; }
+                        DrawMemoryView(s, m, i);
+                        ImGui.EndTabItem();
+                    }
+                    if (!open) m.Enabled = false;       // closed with its x (the Memory menu brings it back)
+                }
+                SelectMem = -1;
+                ImGui.EndTabBar();
+            }
+            if (!any)
+            {
+                ImGui.TextDisabled("No memory windows open - turn one on from the Memory menu");
+                Plugin.SetPhysicalWindow(0, 0);
+            }
+        }
+
+        /// <summary>The memory window to send things to ("Show in memory", a memory Goto): the one on show, else turn on Memory 1</summary>
+        MemView CurrentMem()
+        {
+            if (!Mems[ActiveMem].Enabled)
+            {
+                int i = Array.FindIndex(Mems, m => m.Enabled);
+                if (i < 0) { i = 0; Mems[0].Enabled = true; }
+                ActiveMem = i; SelectMem = i;
+            }
+            return Mems[ActiveMem];
+        }
+
+        void ShowInMemory(int _address, bool _physical)
+        {
+            MemView m = CurrentMem();
+            m.Physical = _physical; m.ScrollTo = _address; m.Follow = 0;
+        }
+
+        void DrawMemoryView(MonitorSnapshot s, MemView m, int _index)
+        {
             ImGui.AlignTextToFramePadding();
             ImGui.TextUnformatted("Goto");
             ImGui.SameLine();
-            DrawGotoBox(s, MonitorPlugin.TargetMemory);
+            DrawGotoBox(s, MonitorPlugin.TargetMemory, m.Box);
             ImGui.SameLine(0, S(16));
-            int space = MemPhysical ? 1 : 0;
+            int space = m.Physical ? 1 : 0;
             ImGui.SetNextItemWidth(S(90));
-            if (ImGui.Combo("##memspace", ref space, SpaceNames, SpaceNames.Length) && (space == 1) != MemPhysical)
+            if (ImGui.Combo("##memspace" + _index, ref space, SpaceNames, SpaceNames.Length) && (space == 1) != m.Physical)
             {
                 // switch view, staying on the same memory if it's paged in
-                int other = MemPhysical ? s.ToLogical(MemTopAddress) : s.ToPhysical(MemTopAddress & 0xffff);
-                MemPhysical = space == 1;
-                MemScrollTo = Math.Max(0, other);
-                if (MemPhysical) MemFollow = 0;
+                int other = m.Physical ? s.ToLogical(m.TopAddress) : s.ToPhysical(m.TopAddress & 0xffff);
+                m.Physical = space == 1;
+                m.ScrollTo = Math.Max(0, other);
+                if (m.Physical) m.Follow = 0;
             }
             if (ImGui.IsItemHovered()) ImGui.SetTooltip("64K: what the CPU sees through the MMU\nPhysical: all 2MB, addressed as bank:offset (8K banks)");
             ImGui.SameLine(0, S(16));
             ImGui.TextUnformatted("Follow");
             ImGui.SameLine();
             ImGui.SetNextItemWidth(S(70));
-            if (ImGui.Combo("##memfollow", ref MemFollow, FollowNames, FollowNames.Length)) { MemFollowLast = -1; if (MemFollow != 0) MemPhysical = false; }
+            if (ImGui.Combo("##memfollow" + _index, ref m.Follow, FollowNames, FollowNames.Length)) { m.FollowLast = -1; if (m.Follow != 0) m.Physical = false; }
 
-            if (MemFollow != 0)
+            if (m.Follow != 0)
             {
-                int target = FollowValue(s.Regs, MemFollow);
-                if (target != MemFollowLast) { MemScrollTo = target; MemFollowLast = target; }
+                int target = FollowValue(s.Regs, m.Follow);
+                if (target != m.FollowLast) { m.ScrollTo = target; m.FollowLast = target; }
             }
 
-            if (!ImGui.BeginChild("##memrows", Vector2.Zero, ImGuiChildFlags.None, WheelFlags())) { ImGui.EndChild(); return; }
+            if (!ImGui.BeginChild("##memrows" + _index, Vector2.Zero, ImGuiChildFlags.None, WheelFlags())) { ImGui.EndChild(); return; }
             float lineH = ImGui.GetTextLineHeightWithSpacing();
-            if (MemScrollTo >= 0)
+            if (m.ScrollTo >= 0)
             {
-                ImGui.SetScrollY((MemScrollTo >> 4) * lineH);
-                MemScrollTo = -1;
+                ImGui.SetScrollY((m.ScrollTo >> 4) * lineH);
+                m.ScrollTo = -1;
             }
 
-            bool phys = MemPhysical;
+            bool phys = m.Physical;
             int rows = phys ? MonitorAddress.PhysicalSize / 16 : 4096;
             float charW = ImGui.CalcTextSize("0").X;
             ImGuiListClipperPtr clipper;
@@ -811,7 +912,7 @@ namespace Monitor
             }
             clipper.End();
             clipper.Destroy();
-            if (firstRow != int.MaxValue) MemTopAddress = firstRow << 4;
+            if (firstRow != int.MaxValue) m.TopAddress = firstRow << 4;
 
             // physical memory is read on demand: the rows on screen plus a screen's worth either side for scrolling
             if (phys && firstRow != int.MaxValue)
@@ -856,9 +957,8 @@ namespace Monitor
         //  Typing a name lists matching symbols underneath (click one, or arrow keys + Enter).
         //  Numbers are handled here; symbols are resolved by the plugin on the emulator thread.
         // ****************************************************************************************
-        void DrawGotoBox(MonitorSnapshot s, int _target)
+        void DrawGotoBox(MonitorSnapshot s, int _target, GotoBox b)
         {
-            GotoBox b = Boxes[_target];
             ImGui.SetNextItemWidth(S(130));
             bool enter = ImGui.InputText("##goto" + _target, ref b.Text, 64, ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.AutoSelectAll | ImGuiInputTextFlags.CharsNoBlank);
             // Enter deactivates the box in the same frame - it still counts as typing in it here
@@ -883,15 +983,15 @@ namespace Monitor
             if (enter)
             {
                 if (open && b.Selected >= 0 && b.Selected < matches.Length) PickSymbol(_target, b, matches[b.Selected], name);
-                else Go(_target, b.Text);
+                else Go(_target, b);
                 b.Selected = -1;
             }
 
             // a symbol Goto came back from the emulator thread
             GotoResult r = Plugin.LastGoto(_target);
-            if (r != null && r.Sequence != b.SeenSequence)
+            if (r != null && r.Sequence != SeenGoto[_target])
             {
-                b.SeenSequence = r.Sequence;
+                SeenGoto[_target] = r.Sequence;
                 if (r.Error != null) { b.Error = r.Error; b.ErrorTime = ImGui.GetTime(); }
                 else { b.Error = null; ShowAddress(_target, r.Address, r.Physical, true); }
             }
@@ -935,11 +1035,11 @@ namespace Monitor
         }
 
         /// <summary>Goto whatever was typed: numbers right away, symbols via the plugin</summary>
-        void Go(int _target, string _text)
+        void Go(int _target, GotoBox _b)
         {
             int a; bool phys;
-            if (MonitorAddress.TryParse(_text, out a, out phys)) { Boxes[_target].Error = null; ShowAddress(_target, a, phys, false); }
-            else Plugin.GotoSymbol(_text, _target);
+            if (MonitorAddress.TryParse(_b.Text, out a, out phys)) { _b.Error = null; ShowAddress(_target, a, phys, false); }
+            else Plugin.GotoSymbol(_b.Text, _target);
         }
 
         /// <summary>A suggestion was chosen: keep any +/- offset that was typed after the name</summary>
@@ -959,7 +1059,7 @@ namespace Monitor
         void ShowAddress(int _target, int _address, bool _physical, bool _pluginDidDisasm)
         {
             if (_target == MonitorPlugin.TargetDisasm) { if (!_pluginDidDisasm) Plugin.DisasmGoto(_address, _physical); }
-            else { MemPhysical = _physical; MemScrollTo = _address; MemFollow = 0; }
+            else ShowInMemory(_address, _physical);
         }
 
         static int FollowValue(Z80Regs r, int _which)
