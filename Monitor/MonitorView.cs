@@ -170,11 +170,11 @@ namespace Monitor
                 if (ImGui.MenuItem("Run", "F1", false, s != null && stopped)) Plugin.Run();
                 if (ImGui.MenuItem("Break", "F1", false, s != null && !stopped)) Plugin.Break();
                 ImGui.Separator();
-                if (ImGui.MenuItem("Step", "F7", false, stopped)) Plugin.Step();
-                if (ImGui.MenuItem("Step Over", "F8", false, stopped)) Plugin.StepOver();
+                if (ImGui.MenuItem("Step", "F7", false, stopped)) DoStep(false);
+                if (ImGui.MenuItem("Step Over", "F8", false, stopped)) DoStep(true);
                 if (ImGui.MenuItem("Step Back", null, false, stopped)) Plugin.StepBack();
                 ImGui.Separator();
-                if (ImGui.MenuItem("Goto PC")) Plugin.DisasmFollowPC();
+                if (ImGui.MenuItem("Goto PC")) GotoPC();
                 if (ImGui.MenuItem("Toggle Breakpoint", "F9", false, s != null)) ToggleBarBreakpoint(s);
                 if (ImGui.MenuItem("Clear Breakpoints")) Plugin.ClearAllBreakpoints();
                 ImGui.EndMenu();
@@ -195,9 +195,33 @@ namespace Monitor
             ImGui.EndMenuBar();
         }
 
+        /// <summary>Source view on, and there's source to show?</summary>
+        bool InSource(MonitorSnapshot s) { return s != null && s.SourceMode && s.SourceFiles.Length > 0; }
+
+        /// <summary>Step / Step Over: by source line in the source view, else by instruction</summary>
+        void DoStep(bool _over)
+        {
+            if (InSource(Shown)) Plugin.SourceStep(_over);
+            else if (_over) Plugin.StepOver();
+            else Plugin.Step();
+        }
+
+        void GotoPC()
+        {
+            Plugin.DisasmFollowPC();
+            Plugin.SourceFollowPC();
+        }
+
         /// <summary>F9 / Debug menu: breakpoint on the user bar, or on PC if there's no bar</summary>
         void ToggleBarBreakpoint(MonitorSnapshot s)
         {
+            if (InSource(s))
+            {
+                SourceRow br = SrcBarRow(s);
+                if (br != null) { if (br.Address >= 0) Plugin.ToggleBreakpoint(br.Address, true); }
+                else Plugin.ToggleLineBreakpoint(s.Regs.PC, false);
+                return;
+            }
             int bi = BarIndex(s);
             if (bi >= 0) Plugin.ToggleLineBreakpoint(s.Disasm[bi].Address, s.Disasm[bi].Physical);
             else Plugin.ToggleLineBreakpoint(s.Regs.PC, false);
@@ -215,8 +239,8 @@ namespace Monitor
             if (s == null || ImGui.GetIO().WantTextInput) return;
             if (ImGui.IsKeyPressed(ImGuiKey.F1, false)) { if (s.Stopped) Plugin.Run(); else Plugin.Break(); return; }
             bool f7 = ImGui.IsKeyPressed(ImGuiKey.F7), f8 = ImGui.IsKeyPressed(ImGuiKey.F8), f9 = ImGui.IsKeyPressed(ImGuiKey.F9, false);
-            if (f7 && s.Stopped) Plugin.Step();
-            else if (f8 && s.Stopped) Plugin.StepOver();
+            if (f7 && s.Stopped) DoStep(false);
+            else if (f8 && s.Stopped) DoStep(true);
             else if (f9) ToggleBarBreakpoint(s);
         }
 
@@ -232,10 +256,10 @@ namespace Monitor
             else { if (ImGui.Button("Break (F1)", new Vector2(runWidth, 0))) Plugin.Break(); }
             ImGui.SameLine();
             ImGui.BeginDisabled(!stopped);
-            if (ImGui.Button("Step (F7)")) Plugin.Step();
+            if (ImGui.Button("Step (F7)")) DoStep(false);
             if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled)) Tip("Single step");
             ImGui.SameLine();
-            if (ImGui.Button("Step Over (F8)")) Plugin.StepOver();
+            if (ImGui.Button("Step Over (F8)")) DoStep(true);
             if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled)) Tip("Step over CALLs, RSTs and repeated instructions");
             ImGui.SameLine();
             if (ImGui.Button("Back")) Plugin.StepBack();
@@ -282,7 +306,7 @@ namespace Monitor
             float rightX = origin.X + leftW + SPLIT;
 
             ImGui.SetCursorPos(origin);
-            Pane("Disassembly", "##disasm", new Vector2(leftW, leftTop), ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse, () => DrawDisassembly(s));
+            Pane(InSource(s) ? "Source" : "Disassembly", "##disasm", new Vector2(leftW, leftTop), ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse, () => DrawDisassembly(s));
             Splitter("##splitLeft", new Vector2(origin.X, origin.Y + leftTop), new Vector2(leftW, SPLIT), false, ref SplitLeftY, H);
             ImGui.SetCursorPos(new Vector2(origin.X, origin.Y + leftTop + SPLIT));
             Pane(null, "##memory", new Vector2(leftW, H - leftTop - SPLIT), ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse, () => DrawMemory(s));
@@ -488,20 +512,240 @@ namespace Monitor
             return (at > 0 ? _label.Substring(at) : _label) + ":";
         }
 
+        // ****************************************************************************************
+        //  Source view: the source file with PC, breakpoints and the user bar on its lines.
+        //  Lines with code have an address (hover for it); breakpoints on them are physical (bank:offset).
+        // ****************************************************************************************
+        /// <summary>The "Source" tick box (the plugin is told; it only shows source if the map file had some)</summary>
+        internal bool SourceView;
+        // source user bar: a file and line
+        int SrcBarFile = -1, SrcBarLine = -1;
+        int SrcBarWantRow = -1;
+        MonitorSnapshot SrcBarRequest;
+        int SrcFitted = 1;
+        static readonly Vector4 ColComment = new Vector4(0.50f, 0.62f, 0.50f, 1.0f);
+
+        SourceRow SrcBarRow(MonitorSnapshot s)
+        {
+            if (s.SourceFile != SrcBarFile) return null;
+            for (int i = 0; i < s.SourceRows.Length && i < SrcFitted; i++) if (s.SourceRows[i].Line == SrcBarLine) return s.SourceRows[i];
+            return null;
+        }
+        int SrcBarIndex(MonitorSnapshot s)
+        {
+            if (s.SourceFile != SrcBarFile) return -1;
+            for (int i = 0; i < s.SourceRows.Length && i < SrcFitted; i++) if (s.SourceRows[i].Line == SrcBarLine) return i;
+            return -1;
+        }
+        void PutSrcBar(MonitorSnapshot s, SourceRow _r) { SrcBarFile = s.SourceFile; SrcBarLine = _r.Line; }
+
+        /// <summary>A file's name without its folder ('/' or '\\' - map files come from Windows and elsewhere)</summary>
+        static string ShortName(string _path)
+        {
+            int cut = Math.Max(_path.LastIndexOf('/'), _path.LastIndexOf('\\'));
+            return cut >= 0 ? _path.Substring(cut + 1) : _path;
+        }
+
+        void DrawSourceFileCombo(MonitorSnapshot s)
+        {
+            string current = s.SourceFile >= 0 && s.SourceFile < s.SourceFiles.Length ? ShortName(s.SourceFiles[s.SourceFile]) : "";
+            ImGui.SetNextItemWidth(S(160));
+            if (ImGui.BeginCombo("##srcfile", current))
+            {
+                for (int i = 0; i < s.SourceFiles.Length; i++)
+                {
+                    if (ImGui.Selectable(ShortName(s.SourceFiles[i]) + "##f" + i, i == s.SourceFile)) Plugin.SourceShow(i, 1);
+                    if (ImGui.IsItemHovered()) Tip(s.SourceFiles[i]);
+                }
+                ImGui.EndCombo();
+            }
+            if (ImGui.IsItemHovered() && s.SourceFile >= 0 && s.SourceFile < s.SourceFiles.Length) Tip(s.SourceFiles[s.SourceFile]);
+        }
+
+        /// <summary>Cursor keys move the source user bar (scrolling at the edges); Shift+Enter sets PC to it</summary>
+        void SourceBarKeys(MonitorSnapshot s)
+        {
+            if (SrcBarWantRow >= 0 && s != SrcBarRequest && s.SourceRows.Length > 0)
+            {
+                PutSrcBar(s, s.SourceRows[Math.Min(SrcBarWantRow, s.SourceRows.Length - 1)]);
+                SrcBarWantRow = -1;
+            }
+            if (!ImGui.IsWindowFocused(ImGuiFocusedFlags.ChildWindows) || ImGui.IsAnyItemActive() || s.SourceRows.Length == 0) return;
+
+            if (ImGui.GetIO().KeyShift && (ImGui.IsKeyPressed(ImGuiKey.Enter, false) || ImGui.IsKeyPressed(ImGuiKey.KeypadEnter, false)))
+            {
+                SourceRow br = SrcBarRow(s);
+                if (br != null && br.Address >= 0 && s.Stopped)
+                {
+                    int pc = s.ToLogical(br.Address);
+                    if (pc >= 0) Plugin.SetRegisters(r => r.PC = (ushort)pc);
+                }
+                return;
+            }
+            bool up = ImGui.IsKeyPressed(ImGuiKey.UpArrow), down = ImGui.IsKeyPressed(ImGuiKey.DownArrow);
+            bool pgUp = ImGui.IsKeyPressed(ImGuiKey.PageUp), pgDown = ImGui.IsKeyPressed(ImGuiKey.PageDown);
+            if (!(up || down || pgUp || pgDown) || SrcBarWantRow >= 0) return;
+
+            int shown = Math.Max(1, Math.Min(SrcFitted, s.SourceRows.Length));
+            int i = SrcBarIndex(s);
+            if (i < 0)
+            {
+                int start = 0;
+                for (int k = 0; k < shown; k++) if (IsPCRow(s, s.SourceRows[k])) start = k;
+                PutSrcBar(s, s.SourceRows[start]);
+                return;
+            }
+            int page = Math.Max(1, shown - 1);
+            if (up) { if (i > 0) PutSrcBar(s, s.SourceRows[i - 1]); else SrcScrollWithBar(s, -1, 0); }
+            else if (down) { if (i < shown - 1) PutSrcBar(s, s.SourceRows[i + 1]); else SrcScrollWithBar(s, 1, shown - 1); }
+            else if (pgUp) SrcScrollWithBar(s, -page, i);
+            else if (pgDown) SrcScrollWithBar(s, page, i);
+        }
+
+        void SrcScrollWithBar(MonitorSnapshot s, int _lines, int _row)
+        {
+            Plugin.SourceScrollBy(_lines);
+            SrcBarWantRow = Math.Max(0, _row);
+            SrcBarRequest = s;
+        }
+
+        static bool IsPCRow(MonitorSnapshot s, SourceRow _r)
+        {
+            return s.PCSource != null && s.PCSource.File == s.SourceFile && s.PCSource.Line == _r.Line;
+        }
+
+        void DrawSource(MonitorSnapshot s)
+        {
+            float lineH = ImGui.GetTextLineHeightWithSpacing();
+            if (s.Stopped && s.PCSource == null)
+                TextCol(ColStopped, "PC $" + s.Regs.PC.ToString("X4") + " has no source line - Step goes an instruction at a time");
+            Plugin.SetSourceLines((int)(ImGui.GetContentRegionAvail().Y / lineH) + 1);
+
+            if (ImGui.IsWindowHovered())
+            {
+                float wheel = ImGui.GetIO().MouseWheel;
+                if (wheel != 0 && !ImGui.GetIO().KeyCtrl) Plugin.SourceScrollBy(wheel > 0 ? -3 : 3);
+            }
+            SourceBarKeys(s);
+
+            ImGuiTableFlags tf = ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoPadOuterX;
+            if (!ImGui.BeginTable("##source", 3, tf)) return;
+            ImGui.TableSetupColumn("bp", ImGuiTableColumnFlags.WidthFixed, S(14));
+            ImGui.TableSetupColumn("line", ImGuiTableColumnFlags.WidthFixed, ImGui.CalcTextSize("00000").X);
+            ImGui.TableSetupColumn("text", ImGuiTableColumnFlags.WidthStretch);
+
+            float bottom = ImGui.GetWindowPos().Y + ImGui.GetWindowHeight() - ImGui.GetStyle().WindowPadding.Y;
+            int fitted = 0;
+            foreach (SourceRow row in s.SourceRows)
+            {
+                if (ImGui.GetCursorScreenPos().Y > bottom) break;
+                string id = s.SourceFile + "_" + row.Line;
+                bool atPC = s.Stopped && IsPCRow(s, row);
+                bool onBar = s.SourceFile == SrcBarFile && row.Line == SrcBarLine;
+                ImGui.TableNextRow();
+                if (atPC) ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(ColPCRow));
+                else if (row.Breakpoint) ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(row.PhysicalBreakpoint ? ColPhysBreakpointRow : ColBreakpointRow));
+                if (onBar) ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg1, ImGui.GetColorU32(ColUserBar));
+
+                // line number: the row's selectable (click = user bar, double click = breakpoint, right click = menu)
+                ImGui.TableSetColumnIndex(1);
+                ImGui.PushStyleColor(ImGuiCol.Text, ColDim);
+                if (ImGui.Selectable(row.Line.ToString().PadLeft(5) + "##sl" + id, false,
+                                     ImGuiSelectableFlags.SpanAllColumns | ImGuiSelectableFlags.AllowOverlap | ImGuiSelectableFlags.AllowDoubleClick))
+                    PutSrcBar(s, row);
+                ImGui.PopStyleColor();
+                if (ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left) && row.Address >= 0) Plugin.ToggleBreakpoint(row.Address, true);
+                int logical = row.Address >= 0 ? s.ToLogical(row.Address) : -1;
+                if (ImGui.BeginPopupContextItem("##sctx" + id))
+                {
+                    if (row.Address < 0) TextDim("No code on this line");
+                    else
+                    {
+                        TextDim(MonitorAddress.Format(row.Address, true) + OtherForm(s, row.Address, true));
+                        if (ImGui.MenuItem((row.Breakpoint ? "Clear breakpoint" : "Set breakpoint") + " (" + MonitorAddress.Format(row.Address, true) + ")")) Plugin.ToggleBreakpoint(row.Address, true);
+                        if (ImGui.MenuItem("Run to here", null, false, s.Stopped && logical >= 0)) Plugin.RunTo(logical);
+                        if (ImGui.MenuItem("Set PC here", null, false, s.Stopped && logical >= 0)) { int pcTo = logical; Plugin.SetRegisters(r => r.PC = (ushort)pcTo); }
+                        if (ImGui.MenuItem("Show disassembly"))
+                        {
+                            SourceView = false; Plugin.SetSourceMode(false);
+                            if (logical >= 0) Plugin.DisasmGoto(logical, false); else Plugin.DisasmGoto(row.Address, true);
+                        }
+                        if (ImGui.MenuItem("Show in memory")) ShowInMemory(row.Address, true);
+                    }
+                    ImGui.EndPopup();
+                }
+                if (ImGui.IsItemHovered() && row.Address >= 0 && !ImGui.IsPopupOpen("", ImGuiPopupFlags.AnyPopupId))
+                    Tip(MonitorAddress.Format(row.Address, true) + OtherForm(s, row.Address, true));
+
+                // gutter: breakpoint marker, click to toggle (lines with code only)
+                ImGui.TableSetColumnIndex(0);
+                Vector2 p = ImGui.GetCursorScreenPos();
+                if (row.Address >= 0)
+                {
+                    if (ImGui.InvisibleButton("##sbp" + id, new Vector2(S(14), ImGui.GetTextLineHeight()))) Plugin.ToggleBreakpoint(row.Address, true);
+                    if (row.Breakpoint && (atPC || onBar))
+                        ImGui.GetWindowDrawList().AddCircleFilled(p + new Vector2(S(7), ImGui.GetTextLineHeight() * 0.5f), S(5), ImGui.GetColorU32(row.PhysicalBreakpoint ? ColPhysBreakpoint : ColBreakpoint));
+                    else if (!row.Breakpoint && ImGui.IsItemHovered())
+                        ImGui.GetWindowDrawList().AddCircle(p + new Vector2(S(7), ImGui.GetTextLineHeight() * 0.5f), S(5), ImGui.GetColorU32(ColBreakpoint));
+                }
+
+                ImGui.TableSetColumnIndex(2);
+                DrawSourceText(row.Text);
+                if (ImGui.GetItemRectMax().Y <= bottom) fitted++;
+            }
+            ImGui.EndTable();
+            Plugin.SetSourceVisible(fitted);
+            SrcFitted = Math.Max(1, fitted);
+        }
+
+        /// <summary>A source line: code, then any ';' comment dimmed (a ';' inside quotes isn't a comment)</summary>
+        static void DrawSourceText(string _text)
+        {
+            int c = -1; char quote = '\0';
+            for (int i = 0; i < _text.Length; i++)
+            {
+                char ch = _text[i];
+                if (quote != '\0') { if (ch == quote) quote = '\0'; }
+                else if (ch == '"' || ch == '\'') { if (!(ch == '\'' && i > 0 && char.IsLetterOrDigit(_text[i - 1]))) quote = ch; }   // af' isn't a quote
+                else if (ch == ';') { c = i; break; }
+            }
+            if (c < 0) { ImGui.TextUnformatted(_text.Length == 0 ? " " : _text); return; }
+            if (c > 0) { ImGui.TextUnformatted(_text.Substring(0, c)); ImGui.SameLine(0, 0); }
+            TextCol(ColComment, _text.Substring(c));
+        }
+
         void DrawDisassembly(MonitorSnapshot s)
         {
-            ImGui.SameLine(0, S(16));
+            // the controls stay put whether the title says "Disassembly" or "Source"
+            ImGui.SameLine(ImGui.GetStyle().WindowPadding.X + ImGui.CalcTextSize("Disassembly").X + S(16));
             ImGui.AlignTextToFramePadding();
             ImGui.TextUnformatted("Goto");
             ImGui.SameLine();
             DrawGotoBox(s, MonitorPlugin.TargetDisasm, DisasmBox);
             ImGui.SameLine();
-            bool follow = Plugin.IsFollowingPC;
+            bool src = InSource(s);
+            bool follow = src ? Plugin.IsFollowingPCSource : Plugin.IsFollowingPC;
             ImGui.BeginDisabled(follow);
-            if (ImGui.Button("PC")) Plugin.DisasmFollowPC();
+            if (ImGui.Button("PC")) { if (src) Plugin.SourceFollowPC(); else Plugin.DisasmFollowPC(); }
             ImGui.EndDisabled();
             if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled)) Tip(follow ? "Following PC" : "Follow PC again");
             ImGui.SameLine(0, S(16));
+            // Source: source level debugging from the map file's [FILES]/[LINES]
+            bool haveSource = s.SourceFiles.Length > 0;
+            bool srcOn = SourceView && haveSource;
+            ImGui.BeginDisabled(!haveSource);
+            if (ImGui.Checkbox("Source", ref srcOn)) { SourceView = srcOn; Plugin.SetSourceMode(srcOn); }
+            ImGui.EndDisabled();
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                Tip(haveSource ? "Source level debugging: show the source instead of the disassembly.\nStep and Step Over go a source line at a time."
+                               : "No source lines - load a map file with [FILES] and [LINES] sections");
+            ImGui.SameLine(0, S(16));
+            if (src)
+            {
+                DrawSourceFileCombo(s);
+                DrawSource(s);
+                return;
+            }
             ImGui.Checkbox("Symbols", ref ShowSymbols);
             if (ImGui.IsItemHovered()) Tip("Show each line's label instead of its address and bytes\n(hover a line for its address)");
 

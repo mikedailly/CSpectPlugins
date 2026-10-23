@@ -36,6 +36,23 @@ namespace Monitor
 
     // *********************************************************************************************************
     /// <summary>
+    ///     One line of a source file, for source level debugging
+    /// </summary>
+    // *********************************************************************************************************
+    public sealed class SourceRow
+    {
+        /// <summary>Line number (1 = first)</summary>
+        public int Line;
+        public string Text;
+        /// <summary>Physical address of the line's code, or -1 if it has none (comments, blank lines, ...)</summary>
+        public int Address = -1;
+        public bool Breakpoint;
+        /// <summary>...and is it only a physical one? (drawn darker)</summary>
+        public bool PhysicalBreakpoint;
+    }
+
+    // *********************************************************************************************************
+    /// <summary>
     ///     Everything the window shows, captured on the emulator thread (MonitorPlugin.Tick).
     ///     Never modified after it's published, so the UI can read it without locking.
     /// </summary>
@@ -64,6 +81,16 @@ namespace Monitor
         /// <summary>Physical memory the memory pane asked for (PhysMemory[0] is at PhysStart), or null</summary>
         public byte[] PhysMemory;
         public int PhysStart;
+
+        // ---- source level debugging (map file [FILES]/[LINES]) ----
+        /// <summary>Source files from the map file (empty if it had none)</summary>
+        public string[] SourceFiles = new string[0];
+        /// <summary>Source view on? (and it's showing SourceFile from SourceRows[0].Line)</summary>
+        public bool SourceMode;
+        public int SourceFile = -1;
+        public SourceRow[] SourceRows = new SourceRow[0];
+        /// <summary>The source line PC is on (null if PC's code has no source line)</summary>
+        public SourceLocation PCSource;
 
         /// <summary>Physical address -> 64k address, if its 8K bank is paged in right now (else -1)</summary>
         public int ToLogical(int _physical)

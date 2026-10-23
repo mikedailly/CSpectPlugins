@@ -62,6 +62,21 @@ namespace Monitor
         /// <summary>Instructions the UI actually fitted on screen last frame (labels take rows too), 0 = unknown</summary>
         int DisasmVisible = 0;
 
+        // ---- source level debugging ----
+        /// <summary>Source view instead of disassembly</summary>
+        bool SourceMode;
+        /// <summary>Source view: follow PC, or show SrcFile from line SrcTop</summary>
+        bool SrcFollow = true;
+        int SrcFile = -1, SrcTop = 1, SrcScroll = 0, SrcLines = 40, SrcVisible = 0;
+        /// <summary>Bumped by every UI request that moves the source view, so the emulator thread doesn't overwrite a newer one</summary>
+        int SrcSeq;
+        /// <summary>Show the source line of this physical address next frame (-1 = none)</summary>
+        int SrcGoto = -1;
+        /// <summary>Most instructions a source step runs before giving up (a line that loops forever, code that never returns)</summary>
+        const int MAX_SOURCE_STEP = 2000000;
+        /// <summary>Source file names, read when the window opens and whenever the CPU stops</summary>
+        string[] SourceFileNames = new string[0];
+
         // ---- emulator thread state ----
         volatile MonitorSnapshot Latest;
         int StopCount;
@@ -128,7 +143,8 @@ namespace Monitor
             }
             w.OnClosed += Window_OnClosed;
             Window = w;
-            lock (Gate) { Commands.Clear(); DisasmFollow = true; DisasmScroll = 0; }
+            lock (Gate) { Commands.Clear(); DisasmFollow = true; DisasmScroll = 0; SrcFollow = true; SrcScroll = 0; }
+            Queue(ReadSourceFiles);
             // the Monitor is the debugger now: hide CSpect's own while it's open (the tick box turns it back on)
             View.HideCSpectDebugger = true;
             SetRemote(true);
@@ -161,8 +177,112 @@ namespace Monitor
         void Stepped()
         {
             StopCount++;
-            lock (Gate) { DisasmFollow = true; DisasmPhysical = false; DisasmScroll = 0; }
+            lock (Gate) { DisasmFollow = true; DisasmPhysical = false; DisasmScroll = 0; SrcFollow = true; SrcScroll = 0; SrcGoto = -1; SrcSeq++; }
             CachedQuery[0] = CachedQuery[1] = null;     // banks may have changed: re-resolve symbol suggestions
+            ReadSourceFiles();
+        }
+
+        // ******************************************************************************************
+        //  Source level debugging - the map file's [FILES] and [LINES] sections
+        // ******************************************************************************************
+        /// <summary>Show source instead of disassembly (only does anything if the map file had source lines)</summary>
+        public void SetSourceMode(bool _on) { lock (Gate) { SourceMode = _on; SrcSeq++; SrcFollow = true; SrcScroll = 0; SrcGoto = -1; } }
+        public bool IsSourceMode { get { lock (Gate) return SourceMode; } }
+        public bool IsFollowingPCSource { get { lock (Gate) return SrcFollow; } }
+        /// <summary>Source view: follow PC again</summary>
+        public void SourceFollowPC() { lock (Gate) { SrcSeq++; SrcFollow = true; SrcScroll = 0; SrcGoto = -1; } }
+        /// <summary>Source view: show a file from a line</summary>
+        public void SourceShow(int _file, int _line) { lock (Gate) { SrcSeq++; SrcFollow = false; SrcFile = _file; SrcTop = Math.Max(1, _line); SrcScroll = 0; SrcGoto = -1; } }
+        /// <summary>Source view: scroll by lines (+ down, - up)</summary>
+        public void SourceScrollBy(int _lines)
+        {
+            lock (Gate)
+            {
+                if (SrcFollow && Latest != null && Latest.SourceRows.Length > 0) { SrcFile = Latest.SourceFile; SrcTop = Latest.SourceRows[0].Line; }
+                SrcFollow = false;
+                SrcScroll += _lines;
+            }
+        }
+        public void SetSourceLines(int _lines) { lock (Gate) SrcLines = Math.Max(1, Math.Min(200, _lines)); }
+        public void SetSourceVisible(int _count) { lock (Gate) SrcVisible = Math.Max(0, _count); }
+
+        void ReadSourceFiles()
+        {
+            try { SourceFileNames = CSpect.GetSourceFiles().ToArray(); }
+            catch (Exception) { SourceFileNames = new string[0]; }         // older CSpect
+        }
+
+        /// <summary>The source line at a physical address (emulator thread), or null</summary>
+        SourceLocation SourceAt(int _physical)
+        {
+            if (_physical < 0 || SourceFileNames.Length == 0) return null;
+            try { return CSpect.GetSourceLocation(_physical); }
+            catch (Exception) { return null; }
+        }
+
+        // ******************************************************************************************
+        /// <summary>
+        ///     Step by source line: run instructions until PC reaches the start of a different source line.
+        ///     _over: CALLs and RSTs run to their return first (so it never stops inside them).
+        ///     Code with no source line (ROM, say) is run through. Stops early at a breakpoint.
+        /// </summary>
+        // ******************************************************************************************
+        public void SourceStep(bool _over)
+        {
+            Queue(delegate
+            {
+                if (CSpect.Debugger(eDebugCommand.GetState) == 0) return;
+                Z80Regs r = CSpect.GetRegs();
+                SourceLocation from = SourceAt(LogicalToPhysical(r.PC));
+                if (from == null)
+                {
+                    // PC isn't in the source: an ordinary instruction step
+                    CSpect.Debugger(_over ? eDebugCommand.StepOver : eDebugCommand.Step);
+                    Stepped();
+                    return;
+                }
+                int count = 0;
+                while (count < MAX_SOURCE_STEP)
+                {
+                    int pc = r.PC;
+                    byte[] op = CSpect.Peek((ushort)pc, 3);
+                    if (_over && IsCall(op[0]))
+                    {
+                        // run the CALL/RST until it comes back to the next instruction, with the stack as it was
+                        int ret = (pc + CallLength(op[0])) & 0xffff, sp = r.SP;
+                        CSpect.Debugger(eDebugCommand.Step); count++;
+                        r = CSpect.GetRegs();
+                        while (r.PC != ret || r.SP != sp)
+                        {
+                            if (count >= MAX_SOURCE_STEP || AtBreakpoint(r.PC)) { Stepped(); return; }
+                            CSpect.Debugger(eDebugCommand.Step); count++;
+                            r = CSpect.GetRegs();
+                        }
+                    }
+                    else
+                    {
+                        CSpect.Debugger(eDebugCommand.Step); count++;
+                        r = CSpect.GetRegs();
+                    }
+                    if (AtBreakpoint(r.PC)) break;
+                    int phys = LogicalToPhysical(r.PC);
+                    SourceLocation at = SourceAt(phys);
+                    if (at != null && at.Address == phys && (at.File != from.File || at.Line != from.Line)) break;
+                }
+                Stepped();
+            });
+        }
+
+        /// <summary>CALL nn, CALL cc,nn, RST n</summary>
+        static bool IsCall(byte _op) { return _op == 0xCD || (_op & 0xC7) == 0xC4 || (_op & 0xC7) == 0xC7; }
+        static int CallLength(byte _op) { return (_op & 0xC7) == 0xC7 ? 1 : 3; }
+
+        /// <summary>A breakpoint (64K, or physical on the bank paged in) at a 64K address?</summary>
+        bool AtBreakpoint(int _pc)
+        {
+            if (CSpect.Debugger(eDebugCommand.GetBreakpoint, _pc & 0xffff) != 0) return true;
+            int phys = LogicalToPhysical(_pc);
+            return phys >= 0 && CSpect.Debugger(eDebugCommand.GetPhysicalBreakpoint, phys) != 0;
         }
         public void ClearAllBreakpoints() { Queue(delegate { CSpect.Debugger(eDebugCommand.ClearAllBreakpoints); TempBreakpoint = -1; }); }
 
@@ -275,7 +395,7 @@ namespace Monitor
                 {
                     r.Physical = phys;
                     r.Address = Wrap(a + offset, phys);
-                    if (_target == TargetDisasm) lock (Gate) { DisasmFollow = false; DisasmPhysical = phys; DisasmStart = r.Address; DisasmScroll = 0; }
+                    if (_target == TargetDisasm) lock (Gate) { DisasmFollow = false; DisasmPhysical = phys; DisasmStart = r.Address; DisasmScroll = 0; SrcSeq++; SrcGoto = phys ? r.Address : LogicalToPhysical(r.Address); }
                 }
                 GotoResults[_target] = r;
             });
@@ -375,7 +495,7 @@ namespace Monitor
         /// <summary>Disassembly view: show from a 64k or physical address</summary>
         public void DisasmGoto(int _address, bool _physical)
         {
-            lock (Gate) { DisasmFollow = false; DisasmPhysical = _physical; DisasmStart = Wrap(_address, _physical); DisasmScroll = 0; }
+            lock (Gate) { DisasmFollow = false; DisasmPhysical = _physical; DisasmStart = Wrap(_address, _physical); DisasmScroll = 0; SrcSeq++; SrcGoto = _physical ? Wrap(_address, true) : -2 - (_address & 0xffff); }
         }
         /// <summary>Disassembly view: scroll by instructions (+ down, - up)</summary>
         public void DisasmScrollBy(int _lines)
@@ -485,6 +605,7 @@ namespace Monitor
             if (phys) LastStart = -1; else { LastStart = start; LastCount = lines; }
 
             UpdateSymbolMatches(s);
+            CaptureSource(s);
 
             if (physCount > 0)
             {
@@ -502,6 +623,68 @@ namespace Monitor
                 s.StackLabels[i] = Label(word);
             }
             return s;
+        }
+
+        // ******************************************************************************************
+        /// <summary>
+        ///     Source view (emulator thread): which file and lines to show, following PC unless scrolled away
+        /// </summary>
+        // ******************************************************************************************
+        void CaptureSource(MonitorSnapshot s)
+        {
+            s.SourceFiles = SourceFileNames;
+            if (SourceFileNames.Length == 0) return;
+            s.PCSource = SourceAt(s.ToPhysical(s.Regs.PC));
+
+            bool on, follow; int file, top, scroll, lines, visible, go, seq;
+            lock (Gate)
+            {
+                seq = SrcSeq;
+                on = SourceMode; follow = SrcFollow; file = SrcFile; top = SrcTop; scroll = SrcScroll; lines = SrcLines;
+                visible = SrcVisible > 0 ? SrcVisible : lines; go = SrcGoto;
+                if (!on) SrcGoto = -1;
+            }
+            s.SourceMode = on;
+            if (!on) return;
+
+            // a Goto: the source line of that address, if it has one (-2 - addr = a 64K address, mapped now)
+            if (go != -1)
+            {
+                SourceLocation g = SourceAt(go >= 0 ? go : s.ToPhysical(-2 - go));
+                if (g != null) { follow = false; file = g.File; top = Math.Max(1, g.Line - 3); }
+            }
+            else if (follow && s.PCSource != null)
+            {
+                int line = s.PCSource.Line;
+                if (s.PCSource.File != file || line < top || line > top + visible - 1) { file = s.PCSource.File; top = Math.Max(1, line - 3); }
+                else if (line > top + visible - 4) top = Math.Max(1, line - visible + 4);      // near the bottom: a line at a time
+            }
+            if (file < 0 || file >= SourceFileNames.Length) file = 0;
+            string[] text;
+            try { text = CSpect.GetSourceText(file) ?? new string[0]; } catch (Exception) { text = new string[0]; }
+            top = Math.Max(1, Math.Min(top + scroll, Math.Max(1, text.Length - 2)));
+            // remember where we are - unless the UI asked for something else meanwhile (that wins next frame)
+            lock (Gate)
+            {
+                if (SrcSeq == seq) { SrcFollow = follow && SrcFollow; SrcFile = file; SrcTop = top; SrcScroll -= scroll; SrcGoto = -1; }
+            }
+
+            var rows = new List<SourceRow>(lines);
+            for (int i = 0; i < lines && top + i <= text.Length; i++)
+            {
+                var row = new SourceRow { Line = top + i, Text = text[top + i - 1] ?? "" };
+                try { row.Address = CSpect.GetSourceAddress(file, row.Line); } catch (Exception) { row.Address = -1; }
+                if (row.Address >= 0)
+                {
+                    int logical = s.ToLogical(row.Address);
+                    bool bp64 = logical >= 0 && CSpect.Debugger(eDebugCommand.GetBreakpoint, logical) != 0;
+                    row.PhysicalBreakpoint = !bp64 && CSpect.Debugger(eDebugCommand.GetPhysicalBreakpoint, row.Address) != 0;
+                    row.Breakpoint = bp64 || row.PhysicalBreakpoint;
+                }
+                rows.Add(row);
+            }
+            s.SourceFile = file;
+            s.SourceRows = rows.ToArray();
         }
 
         // ******************************************************************************************

@@ -537,6 +537,43 @@ namespace Plugin
 
         // ------------------------------------------------------------
         /// <summary>
+        ///     Source level debugging: the source files named in the map file's [FILES] section (file index = list index).
+        ///     Empty if the map file had no source information.
+        /// </summary>
+        // ------------------------------------------------------------
+        List<string> GetSourceFiles();
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     The text of a source file (tabs expanded), or null for a bad index
+        /// </summary>
+        /// <param name="_file">File index (as GetSourceFiles)</param>
+        // ------------------------------------------------------------
+        string[] GetSourceText(int _file);
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Which source line a physical address belongs to (from the map file's [LINES] section)
+        /// </summary>
+        /// <param name="_physical">Physical address (bank * 8192 + offset)</param>
+        /// <returns>
+        ///     The line (Address = where that line's code starts), or null if the address has no source line
+        /// </returns>
+        // ------------------------------------------------------------
+        SourceLocation GetSourceLocation(int _physical);
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     The physical address of a source line's code
+        /// </summary>
+        /// <param name="_file">File index</param>
+        /// <param name="_line">Line number (1 = first line)</param>
+        /// <returns>Physical address, or -1 if the line has no code</returns>
+        // ------------------------------------------------------------
+        int GetSourceAddress(int _file, int _line);
+
+        // ------------------------------------------------------------
+        /// <summary>
         ///     Hex string to Int64 - will stop on an illegal character
         /// </summary>
         /// <param name="_hex">String to convert ($0000, 0x0000 or just 00000)</param>
