@@ -578,7 +578,9 @@ namespace Monitor
             s.Stopped = _stopped;
             s.StopCount = StopCount;
             s.Remote = RemoteSet;
-            s.Regs = CSpect.GetRegs();
+            // registers (and flags) are read while stopped; running, they stay as they were (the first frame reads them)
+            MonitorSnapshot last = Latest;
+            s.Regs = (_stopped || last == null || last.Regs == null) ? CSpect.GetRegs() : last.Regs;
             s.Memory = CSpect.Peek(0, 65536);
             s.Mmu = new byte[8];
             for (int i = 0; i < 8; i++) s.Mmu[i] = CSpect.GetNextRegister((byte)(0x50 + i));
