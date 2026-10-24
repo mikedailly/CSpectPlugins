@@ -39,6 +39,11 @@ namespace TileViewer
             return names;
         }
 
+        // ****************************************************************************************
+        /// <summary>
+        ///     Update tilemap textures
+        /// </summary>
+        // ****************************************************************************************
         private void UploadTextures()
         {
             if (atlasTexture == IntPtr.Zero) { atlasTexture = window.CreateImGuiTexture(TileViewerModel.AtlasWidth, TileViewerModel.AtlasHeight); atlasVersion = -1; }
@@ -50,7 +55,9 @@ namespace TileViewer
         }
 
         // ****************************************************************************************
-        // iWindow ImGui draw callback - one panel filling the OS window
+        /// <summary>
+        ///     iWindow ImGui draw callback - one panel filling the OS window
+        /// </summary>
         // ****************************************************************************************
         internal void Draw()
         {
