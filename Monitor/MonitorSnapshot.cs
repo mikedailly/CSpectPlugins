@@ -76,8 +76,8 @@ namespace Monitor
         /// <summary>CSpect's own debugger screen hidden ("remote" mode)?</summary>
         public bool Remote;
         /// <summary>Symbol auto-complete for each Goto box (MonitorPlugin.TargetDisasm/TargetMemory): the text, and what matched</summary>
-        public string[] SymbolQuery = new string[2];
-        public SymbolMatch[][] SymbolMatches = new SymbolMatch[2][];
+        public string[] SymbolQuery = new string[3];
+        public SymbolMatch[][] SymbolMatches = new SymbolMatch[3][];
         /// <summary>Physical memory the memory pane asked for (PhysMemory[0] is at PhysStart), or null</summary>
         public byte[] PhysMemory;
         public int PhysStart;

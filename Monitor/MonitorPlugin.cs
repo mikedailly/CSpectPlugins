@@ -47,13 +47,17 @@ namespace Monitor
         bool DisasmPhysical = false;
         /// <summary>Goto boxes</summary>
         public const int TargetDisasm = 0, TargetMemory = 1;
+        /// <summary>Symbol completion for the command line (Tab) - no Goto result</summary>
+        public const int TargetCommand = 2;
         readonly GotoResult[] GotoResults = new GotoResult[2];
         int GotoSequence;
         /// <summary>Symbol auto-complete: what each Goto box has typed (null = closed), and the cached answer</summary>
-        readonly string[] SymbolQuery = new string[2];
-        readonly string[] CachedQuery = new string[2];
-        readonly SymbolMatch[][] CachedMatches = new SymbolMatch[2][];
+        readonly string[] SymbolQuery = new string[3];
+        readonly string[] CachedQuery = new string[3];
+        readonly SymbolMatch[][] CachedMatches = new SymbolMatch[3][];
         const int MAX_MATCHES = 12;
+        /// <summary>Tab cycles through these many at most</summary>
+        const int MAX_COMPLETIONS = 64;
         /// <summary>Physical memory the memory pane wants (count 0 = none)</summary>
         int PhysWantStart = 0, PhysWantCount = 0;
         /// <summary>Lines to scroll the disassembly by (+/-), applied on the emulator thread</summary>
@@ -191,7 +195,7 @@ namespace Monitor
         {
             StopCount++;
             lock (Gate) { DisasmFollow = true; DisasmPhysical = false; DisasmScroll = 0; SrcFollow = true; SrcScroll = 0; SrcGoto = -1; SrcSeq++; }
-            CachedQuery[0] = CachedQuery[1] = null;     // banks may have changed: re-resolve symbol suggestions
+            CachedQuery[0] = CachedQuery[1] = CachedQuery[2] = null;     // banks may have changed: re-resolve symbol suggestions
             ReadSourceFiles();
         }
 
@@ -506,7 +510,7 @@ namespace Monitor
         /// <summary>Auto-complete for the Goto boxes (emulator thread, only when the text changes)</summary>
         void UpdateSymbolMatches(MonitorSnapshot _s)
         {
-            for (int t = 0; t < 2; t++)
+            for (int t = 0; t < 3; t++)
             {
                 string q;
                 lock (Gate) q = SymbolQuery[t];
@@ -517,7 +521,7 @@ namespace Monitor
                     var list = new List<SymbolMatch>();
                     try
                     {
-                        foreach (Symbol sym in CSpect.FindSymbols(name, MAX_MATCHES))
+                        foreach (Symbol sym in CSpect.FindSymbols(name, t == TargetCommand ? MAX_COMPLETIONS : MAX_MATCHES))
                         {
                             int a; bool phys;
                             Resolve(sym, out a, out phys);

@@ -397,16 +397,105 @@ namespace Monitor
             "LOAD \"NAME\",add[,len]                 Load into the 64K memory space",
             "LOAD \"NAME\",bank:offset[,length]      Load into physical memory",
             "",
-            "Up/Down: command history.  Esc: close this list."
+            "Up/Down: command history.  Tab: complete a command or symbol (again for the next, Shift+Tab back).  Esc: close this list."
         };
 
         float CommandBarHeight() { return ImGui.GetFrameHeight() + ImGui.GetStyle().ItemSpacing.Y; }
 
-        /// <summary>Up/Down in the command line: step through the history</summary>
-        unsafe int CommandHistoryCallback(ImGuiInputTextCallbackData* _data)
+        // ---- Tab completion: the word at the cursor - a command name at the start of the line, else a symbol ----
+        /// <summary>The word before the cursor (asked of the plugin as a symbol query, so Tab has the matches to hand)</summary>
+        internal string CmdWord = "";
+        bool CmdWordIsFirst;
+        /// <summary>Shift+Tab pressed: step back through the completions on the next callback</summary>
+        bool CmdBackTab;
+        /// <summary>Tab cycles through these (null = not completing); CycleText/CycleCursor are the line as we left it</summary>
+        string[] CycleList;
+        int CycleIndex, CycleStart, CycleCursor;
+        string CycleText;
+        static readonly char[] WordBreaks = " \t,:()\"+-*/;=".ToCharArray();
+
+        static string BufText(ImGuiInputTextCallbackDataPtr d)
+        {
+            byte[] b = new byte[Math.Max(0, d.BufTextLen)];
+            if (b.Length > 0) Marshal.Copy(d.Buf, b, 0, b.Length);
+            return Encoding.UTF8.GetString(b);
+        }
+
+        /// <summary>The command line's callback: history (Up/Down), completion (Tab), and tracking the word at the cursor</summary>
+        unsafe int CommandCallback(ImGuiInputTextCallbackData* _data)
         {
             var d = new ImGuiInputTextCallbackDataPtr(_data);
-            if (d.EventFlag != ImGuiInputTextFlags.CallbackHistory || CmdHistory.Count == 0) return 0;
+            if (d.EventFlag == ImGuiInputTextFlags.CallbackHistory) return CommandHistory(d);
+
+            string text = BufText(d);
+            int cur = Math.Max(0, Math.Min(d.CursorPos, text.Length));
+            int start = cur;
+            while (start > 0 && Array.IndexOf(WordBreaks, text[start - 1]) < 0) start--;
+            bool first = text.Substring(0, start).Trim().Length == 0;
+
+            bool back = false;
+            if (d.EventFlag == ImGuiInputTextFlags.CallbackAlways)
+            {
+                CmdWord = text.Substring(start, cur - start);
+                CmdWordIsFirst = first;
+                // Shift+Tab never reaches the completion callback (ImGui only sends plain Tab) - it's done here
+                if (!CmdBackTab) return 0;
+                CmdBackTab = false;
+                back = true;
+            }
+            else if (d.EventFlag != ImGuiInputTextFlags.CallbackCompletion) return 0;
+
+            // Tab again, nothing typed since: the next alternative (Shift+Tab: the previous one)
+            if (CycleList != null && text == CycleText && cur == CycleCursor)
+                CycleIndex = (CycleIndex + (back ? CycleList.Length - 1 : 1)) % CycleList.Length;
+            else if (back) return 0;                // Shift+Tab only goes back through a list already started
+            else
+            {
+                CycleList = Completions(text.Substring(start, cur - start), first);
+                if (CycleList == null) return 0;
+                CycleIndex = 0;
+                CycleStart = start;
+            }
+            d.DeleteChars(CycleStart, cur - CycleStart);
+            d.InsertChars(CycleStart, CycleList[CycleIndex]);
+            CycleText = BufText(d);
+            CycleCursor = d.CursorPos;
+            if (CycleList.Length > 1)
+                ShowCommandMessage((CycleIndex + 1) + " of " + CycleList.Length + ": " + string.Join("  ", CycleList, 0, Math.Min(CycleList.Length, 8)) +
+                                   (CycleList.Length > 8 ? "  ..." : "") + "   (Tab / Shift+Tab)", false);
+            else CmdMessage = null;
+            return 0;
+        }
+
+        /// <summary>What a word could complete to (null = nothing): command names at the start of the line, else symbols</summary>
+        string[] Completions(string _word, bool _first)
+        {
+            if (_word.Length == 0) return null;
+            var found = new List<string>();
+            if (_first)
+            {
+                foreach (string c in CommandWords) if (c.StartsWith(_word, StringComparison.OrdinalIgnoreCase) && c.IndexOf('\'') < 0) found.Add(c);
+                foreach (string c in new[] { "M", "G", "HELP" }) if (c.StartsWith(_word, StringComparison.OrdinalIgnoreCase)) found.Add(c);
+                found.Sort(StringComparer.Ordinal);
+            }
+            else
+            {
+                char c0 = _word[0];
+                if (char.IsDigit(c0) || c0 == '$' || c0 == '%') return null;          // a number
+                MonitorSnapshot s = Shown;
+                SymbolMatch[] matches = (s != null && s.SymbolQuery[MonitorPlugin.TargetCommand] == _word) ? s.SymbolMatches[MonitorPlugin.TargetCommand] : null;
+                if (matches == null) return null;                                       // not looked up yet
+                foreach (SymbolMatch m in matches) if (m.Name.StartsWith(_word, StringComparison.OrdinalIgnoreCase)) found.Add(m.Name);
+                if (found.Count == 0) foreach (SymbolMatch m in matches) found.Add(m.Name);        // nothing starts with it: ones containing it
+            }
+            return found.Count > 0 ? found.ToArray() : null;
+        }
+
+        /// <summary>Up/Down in the command line: step through the history</summary>
+        int CommandHistory(ImGuiInputTextCallbackDataPtr d)
+        {
+            CycleList = null;
+            if (CmdHistory.Count == 0) return 0;
             int pos = CmdHistoryPos;
             if (pos == CmdHistory.Count)
             {
@@ -438,10 +527,16 @@ namespace Monitor
             ImGui.SameLine();
             if (CmdRefocus) { ImGui.SetKeyboardFocusHere(); CmdRefocus = false; }
             ImGui.SetNextItemWidth(-1);
-            unsafe { if (CmdCallback == null) CmdCallback = CommandHistoryCallback; }
-            bool enter = ImGui.InputTextWithHint("##cmd", "Debugger command - HELP for a list", ref CmdText, 256,
-                                                 ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.CallbackHistory, CmdCallback);
+            unsafe { if (CmdCallback == null) CmdCallback = CommandCallback; }
+            bool enter = ImGui.InputTextWithHint("##cmd", "Debugger command - HELP for a list, Tab completes", ref CmdText, 256,
+                                                 ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.CallbackHistory |
+                                                 ImGuiInputTextFlags.CallbackCompletion | ImGuiInputTextFlags.CallbackAlways, CmdCallback);
+            bool typing = ImGui.IsItemActive();
+            if (typing && ImGui.GetIO().KeyShift && ImGui.IsKeyPressed(ImGuiKey.Tab)) CmdBackTab = true;
             Vector2 boxMin = ImGui.GetItemRectMin(), boxMax = ImGui.GetItemRectMax();
+            // keep the symbols for the word at the cursor looked up, so Tab can complete straight away
+            Plugin.SetSymbolQuery(MonitorPlugin.TargetCommand, typing && !CmdWordIsFirst && CmdWord.Length > 0 ? CmdWord : null);
+            if (!typing) CmdWord = "";
             if (enter)
             {
                 string t = CmdText.Trim();
@@ -451,7 +546,7 @@ namespace Monitor
                     if (CmdHistory.Count > 100) CmdHistory.RemoveAt(0);
                     RunCommand(s, t);
                 }
-                CmdText = ""; CmdTyped = "";
+                CmdText = ""; CmdTyped = ""; CycleList = null;
                 CmdHistoryPos = CmdHistory.Count;
                 CmdRefocus = true;                  // keep typing
             }
