@@ -108,7 +108,11 @@ namespace Monitor
         /// <summary>"Hide CSpect debugger" - on whenever the Monitor opens (MonitorPlugin.OSTick)</summary>
         internal bool HideCSpectDebugger = true;
 
-        public MonitorView(MonitorPlugin _plugin) { Plugin = _plugin; }
+        public MonitorView(MonitorPlugin _plugin)
+        {
+            Plugin = _plugin;
+            LoadWatches();
+        }
 
         // ****************************************************************************************
         //  iWindow ImGui draw callback
@@ -1417,7 +1421,44 @@ namespace Monitor
         /// <summary>The watch values when the CPU last stopped (to show what the last step changed)</summary>
         WatchResult[] PrevWatches;
 
-        void WatchesChanged() { Plugin.SetWatches(Watches.ToArray()); }
+        void WatchesChanged()
+        {
+            Plugin.SetWatches(Watches.ToArray());
+            SaveWatches();
+        }
+
+        // ---- watches are kept in a file in the current folder, so they come back when CSpect is run again ----
+        internal const string WATCH_FILE = "monitor_watches.txt";
+        /// <summary>Where the watch file is - fixed when the Monitor starts, in case the current folder changes later</summary>
+        internal string WatchFile;
+
+        void LoadWatches()
+        {
+            try { WatchFile = System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), WATCH_FILE); }
+            catch (Exception) { WatchFile = WATCH_FILE; }
+            try
+            {
+                if (!System.IO.File.Exists(WatchFile)) return;
+                foreach (string line in System.IO.File.ReadAllLines(WatchFile))
+                {
+                    string w = line.Trim();
+                    if (w.Length > 0 && !w.StartsWith(";")) Watches.Add(w);
+                }
+                Plugin.SetWatches(Watches.ToArray());
+            }
+            catch (Exception ex) { Console.WriteLine(" Monitor: couldn't read " + WatchFile + ": " + ex.Message); }
+        }
+
+        void SaveWatches()
+        {
+            try
+            {
+                var lines = new List<string> { "; CSpect Monitor watches - where[,size[,count]], one per line" };
+                lines.AddRange(Watches);
+                System.IO.File.WriteAllLines(WatchFile, lines.ToArray());
+            }
+            catch (Exception ex) { ShowCommandMessage("Couldn't save the watches to " + WatchFile + ": " + ex.Message, true); }
+        }
 
         /// <summary>Add a watch (the command line's WATCH, or the add box)</summary>
         internal void AddWatch(string _expr)
