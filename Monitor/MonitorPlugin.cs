@@ -230,8 +230,23 @@ namespace Monitor
         /// <summary>Is this word a label? (case insensitive, remembered - cleared when the CPU stops, in case symbols reload)</summary>
         readonly Dictionary<string, bool> IsLabelCache = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
 
-        /// <summary>The words in a source line's code (not its comment) that are labels, as (start, length) pairs</summary>
-        int[] LabelWords(string _text)
+        bool IsLabel(string _word)
+        {
+            bool label;
+            if (!IsLabelCache.TryGetValue(_word, out label))
+            {
+                try { label = CSpect.FindSymbol(_word) != null; } catch (Exception) { label = false; }
+                IsLabelCache[_word] = label;
+            }
+            return label;
+        }
+
+        /// <summary>
+        ///     The words in a source line's code (not its comment) that are labels, as (start, length) pairs.
+        ///     Local labels too: @name or .name - or a plain name that isn't a label itself - is SCOPE@NAME, where SCOPE
+        ///     is the global label the line comes under.
+        /// </summary>
+        int[] LabelWords(string _text, string _scope)
         {
             int end = SourceText.CommentStart(_text);
             List<int> words = SourceText.Words(_text, end < 0 ? _text.Length : end);
@@ -239,20 +254,50 @@ namespace Monitor
             for (int w = 0; w < words.Count; w += 2)
             {
                 string word = _text.Substring(words[w], words[w + 1]);
-                bool label;
-                if (!IsLabelCache.TryGetValue(word, out label))
-                {
-                    try { label = CSpect.FindSymbol(word) != null; } catch (Exception) { label = false; }
-                    IsLabelCache[word] = label;
-                }
+                bool local = word.Length > 1 && (word[0] == '@' || word[0] == '.');
+                string name = local ? word.Substring(1) : word;
+                bool label = (!local && IsLabel(word)) ||
+                             (_scope != null && (IsLabel(_scope + "@" + name) || IsLabel(_scope + "." + name)));
                 if (label) { found.Add(words[w]); found.Add(words[w + 1]); }
             }
             return found.ToArray();
         }
 
+        /// <summary>Each file's scope (the global label in force) at each line - worked out once per file</summary>
+        readonly Dictionary<int, string[]> FileScopes = new Dictionary<int, string[]>();
+
+        /// <summary>
+        ///     The global label a line comes under: the last label defined at the very start of a line (not a local -
+        ///     no @ or . first), up to and including this one. null if there isn't one yet.
+        /// </summary>
+        string ScopeAt(int _file, string[] _text, int _line)
+        {
+            string[] scopes;
+            if (!FileScopes.TryGetValue(_file, out scopes) || scopes.Length != _text.Length + 1)
+            {
+                scopes = new string[_text.Length + 1];
+                string current = null;
+                for (int i = 0; i < _text.Length; i++)
+                {
+                    string t = _text[i] ?? "";
+                    if (t.Length > 0 && SourceText.IsWordChar(t[0]) && t[0] != '@' && t[0] != '.' && !char.IsDigit(t[0]))
+                    {
+                        int n = 1;
+                        while (n < t.Length && SourceText.IsWordChar(t[n])) n++;
+                        string word = t.Substring(0, n);
+                        if (IsLabel(word)) current = word;
+                    }
+                    scopes[i + 1] = current;
+                }
+                FileScopes[_file] = scopes;
+            }
+            return _line >= 0 && _line < scopes.Length ? scopes[_line] : null;
+        }
+
         void ReadSourceFiles()
         {
             IsLabelCache.Clear();
+            FileScopes.Clear();
             try { SourceFileNames = CSpect.GetSourceFiles().ToArray(); }
             catch (Exception) { SourceFileNames = new string[0]; }         // older CSpect
         }
@@ -1005,7 +1050,7 @@ namespace Monitor
             for (int i = 0; i < lines && top + i <= text.Length; i++)
             {
                 var row = new SourceRow { Line = top + i, Text = text[top + i - 1] ?? "" };
-                row.Labels = LabelWords(row.Text);
+                row.Labels = LabelWords(row.Text, ScopeAt(file, text, row.Line));
                 try { row.Address = CSpect.GetSourceAddress(file, row.Line); } catch (Exception) { row.Address = -1; }
                 if (row.Address >= 0)
                 {
