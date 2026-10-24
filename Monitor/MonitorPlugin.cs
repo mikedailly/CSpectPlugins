@@ -782,25 +782,106 @@ namespace Monitor
             return r;
         }
 
-        /// <summary>Where a watch looks: a number, bank:offset, a register pair (the memory it points to), or a label</summary>
+        /// <summary>
+        ///     Where a watch looks: a number, bank:offset, a register pair (the memory it points to), a label - or a
+        ///     calculation of any of those ($1234+hl+(a*4), ix+label), with bank:offset parts calculated too
+        /// </summary>
         bool WatchAddress(string _text, ref Z80Regs _regs, out int _address, out bool _physical, out string _reg, out string _error)
         {
             _address = 0; _physical = false; _reg = null; _error = null;
             if (MonitorAddress.TryParse(_text, out _address, out _physical)) return true;
+
+            // the simple forms keep their meaning: a label is where it is now (its physical address if its bank
+            // isn't paged in), a register pair (+/- n) is what it points to
             string name; int offset;
-            if (!MonitorAddress.TrySplitSymbol(_text, out name, out offset)) { _error = "'" + _text + "' isn't an address, register or label"; return false; }
-            string up = name.ToUpperInvariant();
-            if (Array.IndexOf(WatchRegisters, up) >= 0)
+            if (MonitorAddress.TrySplitSymbol(_text, out name, out offset) && IsName(name))
             {
-                if (_regs == null) _regs = CSpect.GetRegs();
-                int v = RegisterPair(_regs, up);
-                _address = (v + offset) & 0xffff;
-                _reg = up + "=$" + v.ToString("X4") + (offset != 0 ? (offset > 0 ? "+" : "") + offset : "");
-                return true;
+                string up = name.ToUpperInvariant();
+                if (Array.IndexOf(WatchRegisters, up) >= 0)
+                {
+                    if (_regs == null) _regs = CSpect.GetRegs();
+                    int v = RegisterPair(_regs, up);
+                    _address = (v + offset) & 0xffff;
+                    _reg = up + "=$" + v.ToString("X4") + (offset != 0 ? (offset > 0 ? "+" : "") + offset : "");
+                    return true;
+                }
+                if (ResolveSymbol(name, out _address, out _physical)) { _address = Wrap(_address + offset, _physical); return true; }
             }
-            if (!ResolveSymbol(name, out _address, out _physical)) { _error = "Unknown label '" + name + "'"; return false; }
-            _address = Wrap(_address + offset, _physical);
+
+            // a calculation; "bank:offset" with either side calculated is physical memory
+            Z80Regs regs = _regs;
+            Func<string, long?> lookup = n =>
+            {
+                string up = n.ToUpperInvariant();
+                if (IsRegister(up)) { if (regs == null) regs = CSpect.GetRegs(); return Register(regs, up); }
+                Symbol sym;
+                try { sym = CSpect.FindSymbol(n); } catch (Exception) { sym = null; }
+                return sym != null ? sym.value : (long?)null;
+            };
+            int colon = TopLevelColon(_text);
+            long value;
+            if (colon >= 0)
+            {
+                long bank, off;
+                if (!WatchExpression.TryEval(_text.Substring(0, colon), lookup, out bank, out _error)) { _regs = regs; return false; }
+                if (!WatchExpression.TryEval(_text.Substring(colon + 1), lookup, out off, out _error)) { _regs = regs; return false; }
+                value = bank * MonitorAddress.BankSize + off;
+                _physical = true;
+            }
+            else
+            {
+                if (!WatchExpression.TryEval(_text, lookup, out value, out _error)) { _regs = regs; return false; }
+                _physical = value > 0xffff;
+            }
+            _regs = regs;
+            if (value < 0 && !_physical) value &= 0xffff;               // e.g. hl-2 with hl = 0
+            _address = Wrap((int)(value % MonitorAddress.PhysicalSize), _physical);
             return true;
+        }
+
+        static bool IsName(string _s)
+        {
+            if (_s.Length == 0 || !(char.IsLetter(_s[0]) || _s[0] == '_' || _s[0] == '@' || _s[0] == '.')) return false;
+            for (int i = 1; i < _s.Length; i++)
+                if (!(char.IsLetterOrDigit(_s[i]) || _s[i] == '_' || _s[i] == '@' || _s[i] == '.' || _s[i] == '!' || (_s[i] == '\'' && i == _s.Length - 1))) return false;
+            return true;
+        }
+
+        /// <summary>The ':' of "bank:offset", outside any brackets (-1 if none)</summary>
+        static int TopLevelColon(string _s)
+        {
+            int depth = 0;
+            for (int i = 0; i < _s.Length; i++)
+            {
+                if (_s[i] == '(') depth++;
+                else if (_s[i] == ')') depth--;
+                else if (_s[i] == ':' && depth == 0) return i;
+            }
+            return -1;
+        }
+
+        static readonly string[] Registers8 = { "A", "F", "B", "C", "D", "E", "H", "L", "I", "R", "IXH", "IXL", "IYH", "IYL",
+                                                "A'", "F'", "B'", "C'", "D'", "E'", "H'", "L'" };
+        static bool IsRegister(string _up) { return Array.IndexOf(WatchRegisters, _up) >= 0 || Array.IndexOf(Registers8, _up) >= 0; }
+
+        /// <summary>A register's value, 8 or 16 bit (name in upper case)</summary>
+        static long Register(Z80Regs r, string _up)
+        {
+            switch (_up)
+            {
+                case "A": return r.AF >> 8; case "F": return r.AF & 0xff;
+                case "B": return r.BC >> 8; case "C": return r.BC & 0xff;
+                case "D": return r.DE >> 8; case "E": return r.DE & 0xff;
+                case "H": return r.HL >> 8; case "L": return r.HL & 0xff;
+                case "I": return r.I; case "R": return r.R;
+                case "IXH": return r.IX >> 8; case "IXL": return r.IX & 0xff;
+                case "IYH": return r.IY >> 8; case "IYL": return r.IY & 0xff;
+                case "A'": return r._AF >> 8; case "F'": return r._AF & 0xff;
+                case "B'": return r._BC >> 8; case "C'": return r._BC & 0xff;
+                case "D'": return r._DE >> 8; case "E'": return r._DE & 0xff;
+                case "H'": return r._HL >> 8; case "L'": return r._HL & 0xff;
+            }
+            return RegisterPair(r, _up);
         }
 
         static readonly string[] WatchRegisters = { "AF", "BC", "DE", "HL", "IX", "IY", "SP", "PC", "AF'", "BC'", "DE'", "HL'" };

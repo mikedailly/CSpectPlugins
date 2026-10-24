@@ -3,6 +3,7 @@
 //      Released under the GNU 3 license - please see license file for more details
 // ********************************************************************************************************************************************
 using Plugin;
+using System;
 using System.Globalization;
 
 namespace Monitor
@@ -171,6 +172,141 @@ namespace Monitor
         public bool Physical;
         /// <summary>null if it worked, else why not</summary>
         public string Error;
+    }
+
+    // *********************************************************************************************************
+    /// <summary>
+    ///     A calculation, for watch addresses: $1234+hl+(a*4), ix+label, table+(b<<1)...
+    ///         operators   + - * / %   &amp; | ^ &lt;&lt; &gt;&gt;   unary - + ~   ( )   (C precedence)
+    ///         numbers     $hex, 0xhex, %binary, decimal
+    ///         names       anything else - registers and labels, looked up by the caller
+    /// </summary>
+    // *********************************************************************************************************
+    public static class WatchExpression
+    {
+        /// <summary>Work out _text. _lookup gives a name's value, or null if it doesn't know it.</summary>
+        public static bool TryEval(string _text, Func<string, long?> _lookup, out long _value, out string _error)
+        {
+            var p = new Parser { Text = _text ?? "", Lookup = _lookup };
+            _value = 0; _error = null;
+            try
+            {
+                p.Skip();
+                if (p.Pos >= p.Text.Length) throw new FormatException("Expected an address, label or register");
+                _value = p.Or();
+                p.Skip();
+                if (p.Pos < p.Text.Length) throw new FormatException("Unexpected '" + p.Text.Substring(p.Pos) + "'");
+                return true;
+            }
+            catch (FormatException ex) { _error = ex.Message; return false; }
+        }
+
+        sealed class Parser
+        {
+            public string Text;
+            public int Pos;
+            public Func<string, long?> Lookup;
+
+            public void Skip() { while (Pos < Text.Length && char.IsWhiteSpace(Text[Pos])) Pos++; }
+            bool Take(string _op)
+            {
+                Skip();
+                if (string.CompareOrdinal(Text, Pos, _op, 0, _op.Length) != 0) return false;
+                // don't take "<" out of "<<" etc.
+                if (_op.Length == 1 && Pos + 1 < Text.Length && (_op == "<" || _op == ">") && Text[Pos + 1] == _op[0]) return false;
+                Pos += _op.Length;
+                return true;
+            }
+
+            public long Or() { long v = Xor(); while (Take("|")) v |= Xor(); return v; }
+            long Xor() { long v = And(); while (Take("^")) v ^= And(); return v; }
+            long And() { long v = Shift(); while (Take("&")) v &= Shift(); return v; }
+            long Shift()
+            {
+                long v = Add();
+                while (true)
+                {
+                    if (Take("<<")) v <<= (int)Math.Min(63, Math.Max(0, Add()));
+                    else if (Take(">>")) v >>= (int)Math.Min(63, Math.Max(0, Add()));
+                    else return v;
+                }
+            }
+            long Add()
+            {
+                long v = Mul();
+                while (true)
+                {
+                    if (Take("+")) v += Mul();
+                    else if (Take("-")) v -= Mul();
+                    else return v;
+                }
+            }
+            long Mul()
+            {
+                long v = Unary();
+                while (true)
+                {
+                    if (Take("*")) v *= Unary();
+                    else if (Take("/")) { long d = Unary(); if (d == 0) throw new FormatException("Divide by zero"); v /= d; }
+                    else if (Take("%")) { long d = Unary(); if (d == 0) throw new FormatException("Divide by zero"); v %= d; }
+                    else return v;
+                }
+            }
+            long Unary()
+            {
+                if (Take("-")) return -Unary();
+                if (Take("+")) return Unary();
+                if (Take("~")) return ~Unary();
+                return Primary();
+            }
+            long Primary()
+            {
+                Skip();
+                if (Pos >= Text.Length) throw new FormatException("Expression ends too soon");
+                char c = Text[Pos];
+                if (c == '(')
+                {
+                    Pos++;
+                    long v = Or();
+                    if (!Take(")")) throw new FormatException("Missing ')'");
+                    return v;
+                }
+                if (c == '$') { Pos++; return Digits(16, "hex"); }
+                if (c == '%') { Pos++; return Digits(2, "binary"); }
+                if (c == '0' && Pos + 1 < Text.Length && (Text[Pos + 1] == 'x' || Text[Pos + 1] == 'X')) { Pos += 2; return Digits(16, "hex"); }
+                if (char.IsDigit(c)) return Digits(10, "decimal");
+                if (char.IsLetter(c) || c == '_' || c == '@' || c == '.')
+                {
+                    int start = Pos;
+                    while (Pos < Text.Length && (char.IsLetterOrDigit(Text[Pos]) || Text[Pos] == '_' || Text[Pos] == '@' || Text[Pos] == '.' || Text[Pos] == '!')) Pos++;
+                    if (Pos < Text.Length && Text[Pos] == '\'') Pos++;          // AF', HL'...
+                    string name = Text.Substring(start, Pos - start);
+                    long? v = Lookup(name);
+                    if (v == null) throw new FormatException("Unknown label '" + name + "'");
+                    return v.Value;
+                }
+                throw new FormatException("Unexpected '" + c + "'");
+            }
+            long Digits(int _base, string _what)
+            {
+                long v = 0; int n = 0;
+                while (Pos < Text.Length)
+                {
+                    int d = HexDigit(Text[Pos]);
+                    if (d < 0 || d >= _base) break;
+                    v = v * _base + d; Pos++; n++;
+                }
+                if (n == 0) throw new FormatException("Expected a " + _what + " number");
+                return v;
+            }
+            static int HexDigit(char c)
+            {
+                if (c >= '0' && c <= '9') return c - '0';
+                if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+                if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+                return -1;
+            }
+        }
     }
 
     // *********************************************************************************************************

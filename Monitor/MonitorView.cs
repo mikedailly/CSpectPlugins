@@ -377,6 +377,7 @@ namespace Monitor
             "G <address>             Goto address in disassembly window",
             "G <bank>:<offset>       Goto address in physical memory using bank/offset",
             "WATCH <where>[,b|w|l|t[,count]]  Add a watch (label, address, bank:offset or register pair)",
+            "                        <where> can be a calculation: $1234+hl+(a*4)  ix+label  (+ - * / % & | ^ << >>)",
             "BR <address>            Toggle Breakpoint",
             "BR <bank>:<offset>      Toggle Physical address breakpoint",
             "WRITE <address>         Toggle a WRITE access break point",
@@ -1476,7 +1477,7 @@ namespace Monitor
             float addH = ImGui.GetFrameHeightWithSpacing();
             if (ImGui.BeginChild("##watchrows", new Vector2(0, -addH), ImGuiChildFlags.None, WheelFlags()))
             {
-                if (Watches.Count == 0) TextDim("No watches yet - add one below, e.g.  score,w   hl,b,8   10:$0000,t,0");
+                if (Watches.Count == 0) TextDim("No watches yet - add one below, e.g.  score,w   hl,b,8   ix+offset,w   10:$0000,t,0");
                 else if (ImGui.BeginTable("##watches", 4, ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerV | ImGuiTableFlags.Resizable))
                 {
                     ImGui.TableSetupColumn("Watch", ImGuiTableColumnFlags.WidthFixed, S(170));
@@ -1537,7 +1538,7 @@ namespace Monitor
             ImGui.EndChild();
 
             ImGui.SetNextItemWidth(-1);
-            if (ImGui.InputTextWithHint("##addwatch", "Add a watch: label,b,3   hl,w,4   $1234,l   $00:$1234,t,10   (b w l t, count; t,0 = to a 0 byte)",
+            if (ImGui.InputTextWithHint("##addwatch", "Add a watch: label,b,3   hl,w,4   $1234+hl+(a*4),b,10   $00:$1234,t,0   (b w l t, count; t,0 = to a 0 byte)",
                                         ref WatchInput, 128, ImGuiInputTextFlags.EnterReturnsTrue))
             {
                 AddWatch(WatchInput);
