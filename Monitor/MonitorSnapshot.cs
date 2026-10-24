@@ -208,6 +208,51 @@ namespace Monitor
         public static bool IsWordChar(char _c) { return char.IsLetterOrDigit(_c) || _c == '_' || _c == '.' || _c == '@' || _c == '!'; }
 
         /// <summary>
+        ///     The numbers before _end, as (start, length): $hex #hex 0xhex %binary decimal, and 0C000h / 0101b -
+        ///     a whole word (not part of a longer one), not in quotes
+        /// </summary>
+        public static List<int> Numbers(string _text, int _end)
+        {
+            var nums = new List<int>();
+            char quote = '\0';
+            int i = 0;
+            while (i < _end)
+            {
+                char ch = _text[i];
+                if (quote != '\0') { if (ch == quote) quote = '\0'; i++; continue; }
+                if (IsQuote(_text, i)) { quote = ch; i++; continue; }
+                bool boundary = i == 0 || !(IsWordChar(_text[i - 1]) || _text[i - 1] == ')');
+                if (!boundary) { i++; continue; }
+                int prefix = (ch == '$' || ch == '#' || ch == '%') ? 1 : 0;
+                int start = i + prefix;
+                int stop = start;
+                while (stop < _end && IsWordChar(_text[stop])) stop++;
+                string word = _text.Substring(start, stop - start);
+                if (word.Length > 0 && IsNumber(word, ch, prefix == 1)) { nums.Add(i); nums.Add(stop - i); i = stop; continue; }
+                i = Math.Max(i + 1, prefix == 1 ? i + 1 : stop);
+            }
+            return nums;
+        }
+
+        static bool IsNumber(string _w, char _prefix, bool _hasPrefix)
+        {
+            if (_hasPrefix) return _prefix == '%' ? All(_w, "01") : All(_w, HEX);
+            if (!char.IsDigit(_w[0])) return false;
+            if (_w.Length > 2 && (_w[1] == 'x' || _w[1] == 'X') && _w[0] == '0') return All(_w.Substring(2), HEX);
+            char last = char.ToLowerInvariant(_w[_w.Length - 1]);
+            if (_w.Length > 1 && last == 'h') return All(_w.Substring(0, _w.Length - 1), HEX);
+            if (_w.Length > 1 && last == 'b' && All(_w.Substring(0, _w.Length - 1), "01")) return true;
+            return All(_w, "0123456789");
+        }
+        const string HEX = "0123456789abcdefABCDEF";
+        static bool All(string _s, string _chars)
+        {
+            if (_s.Length == 0) return false;
+            foreach (char c in _s) if (_chars.IndexOf(c) < 0) return false;
+            return true;
+        }
+
+        /// <summary>
         ///     The words before _end that could be labels, as (start, length) - not in quotes, not numbers
         ///     (a digit first, or after $ % #). Anything that isn't a word character splits words.
         /// </summary>

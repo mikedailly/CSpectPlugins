@@ -1002,16 +1002,21 @@ namespace Monitor
             if (_text.Length == 0) { ImGui.TextUnformatted(" "); return; }
             int c = SourceText.CommentStart(_text);
             int code = c < 0 ? _text.Length : c;
-            // the code, with words that are labels in the label colour
+            // the code, with labels and numbers coloured as in the disassembly
+            var spans = new List<int[]>();
+            for (int i = 0; i + 1 < _labels.Length; i += 2) spans.Add(new[] { _labels[i], _labels[i + 1], 0 });
+            List<int> nums = SourceText.Numbers(_text, code);
+            for (int i = 0; i + 1 < nums.Count; i += 2) spans.Add(new[] { nums[i], nums[i + 1], 1 });
+            spans.Sort((x, y) => x[0].CompareTo(y[0]));
             int at = 0;
             bool first = true;
-            for (int i = 0; i + 1 < _labels.Length; i += 2)
+            foreach (int[] sp in spans)
             {
-                int start = _labels[i], len = _labels[i + 1];
+                int start = sp[0], len = sp[1];
                 if (start < at || start + len > code) continue;
                 if (start > at) { if (!first) ImGui.SameLine(0, 0); ImGui.TextUnformatted(_text.Substring(at, start - at)); first = false; }
                 if (!first) ImGui.SameLine(0, 0);
-                TextCol(ColLabel, _text.Substring(start, len));
+                TextCol(sp[2] == 0 ? ColLabel : ColHex, _text.Substring(start, len));
                 first = false;
                 at = start + len;
             }
