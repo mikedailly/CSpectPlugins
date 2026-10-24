@@ -88,6 +88,8 @@ namespace Monitor
         /// <summary>"Run to here" breakpoint to remove when we next stop (-1 = none)</summary>
         int TempBreakpoint = -1;
         bool RemoteSet;
+        /// <summary>The window was closed: run, if we're stopped</summary>
+        volatile bool RunOnClose;
         int LastStart = -1, LastCount = 0;
 
         /// <summary>The newest snapshot (null until the first emulator frame after opening)</summary>
@@ -161,6 +163,7 @@ namespace Monitor
             w.OnClosed += Window_OnClosed;
             Window = w;
             lock (Gate) { Commands.Clear(); DisasmFollow = true; DisasmScroll = 0; SrcFollow = true; SrcScroll = 0; }
+            RunOnClose = false;
             Queue(ReadSourceFiles);
             // the Monitor is the debugger now: hide CSpect's own while it's open (the tick box turns it back on)
             View.HideCSpectDebugger = true;
@@ -175,6 +178,7 @@ namespace Monitor
             Active = false;
             Window = null;
             lock (Gate) Commands.Clear();
+            RunOnClose = true;                  // closing the Monitor carries on running (on the emulator thread, next Tick)
             // don't leave CSpect's own debugger hidden
             if (RemoteSet) { CSpect.Debugger(eDebugCommand.SetRemote, 0); RemoteSet = false; }
         }
@@ -587,7 +591,16 @@ namespace Monitor
         // ******************************************************************************************
         public void Tick()
         {
-            if (!Active) return;
+            if (!Active)
+            {
+                if (RunOnClose)
+                {
+                    RunOnClose = false;
+                    if (CSpect.Debugger(eDebugCommand.GetState) != 0) CSpect.Debugger(eDebugCommand.Run);
+                    WasStopped = false;
+                }
+                return;
+            }
 
             Action[] todo;
             lock (Gate) { todo = Commands.ToArray(); Commands.Clear(); }
