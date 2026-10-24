@@ -112,6 +112,7 @@ namespace Monitor
         {
             Plugin = _plugin;
             LoadWatches();
+            LoadSettings();
         }
 
         // ****************************************************************************************
@@ -382,6 +383,7 @@ namespace Monitor
             "WATCH <where>[,b|w|l|t[,count]]  Add a watch to the watch tab in use (label, address, bank:offset or register pair)",
             "                        no size is bytes: $1234,10 = 10 bytes",
             "                        <where> can be a calculation: $1234+hl+(a*4)  ix+label  (+ - * / % & | ^ << >>)",
+            "TAB <w>,<w>,...         Source view tab widths: each tab in turn, the last repeating (TAB 4,4,4,8)",
             "BR <address>            Toggle Breakpoint",
             "BR <bank>:<offset>      Toggle Physical address breakpoint",
             "WRITE <address>         Toggle a WRITE access break point",
@@ -488,7 +490,7 @@ namespace Monitor
             if (_first)
             {
                 foreach (string c in CommandWords) if (c.StartsWith(_word, StringComparison.OrdinalIgnoreCase) && c.IndexOf('\'') < 0) found.Add(c);
-                foreach (string c in new[] { "M", "G", "HELP", "WATCH" }) if (c.StartsWith(_word, StringComparison.OrdinalIgnoreCase)) found.Add(c);
+                foreach (string c in new[] { "M", "G", "HELP", "WATCH", "TAB" }) if (c.StartsWith(_word, StringComparison.OrdinalIgnoreCase)) found.Add(c);
                 found.Sort(StringComparer.Ordinal);
             }
             else
@@ -604,6 +606,21 @@ namespace Monitor
             string arg = _text.Substring(end).Trim();
             if (word == "HELP" || word == "?") { ShowCommandHelp = !ShowCommandHelp; return; }
             ShowCommandHelp = false;
+            if (word == "TAB")
+            {
+                if (arg.Length == 0) { ShowCommandMessage("Tabs: " + string.Join(",", Plugin.GetTabs()) + "   (TAB 4,4,4,8 - each tab's width, the last repeats)", false); return; }
+                var tabs = new List<int>();
+                foreach (string t in arg.Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    int v;
+                    if (!MonitorAddress.TryNumber(t, out v) || v < 1 || v > 64) { ShowCommandMessage("TAB: '" + t + "' - widths are 1 to 64, e.g. TAB 4,4,4,8", true); return; }
+                    tabs.Add(v);
+                }
+                Plugin.SetTabs(tabs.ToArray());
+                SaveSettings();
+                ShowCommandMessage("Tabs: " + string.Join(",", tabs), false);
+                return;
+            }
             if (word == "WATCH")
             {
                 if (!WatchViews[ActiveWatch].Enabled)
@@ -1512,6 +1529,46 @@ namespace Monitor
                 for (int i = 0; i < WATCH_VIEWS; i++) Plugin.SetWatches(i, WatchViews[i].Watches.ToArray());
             }
             catch (Exception ex) { Console.WriteLine(" Monitor: couldn't read " + WatchFile + ": " + ex.Message); }
+        }
+
+        // ---- other settings (the source view's tabs), kept next to the watches ----
+        internal const string SETTINGS_FILE = "monitor_settings.txt";
+
+        string SettingsFile()
+        {
+            try { return System.IO.Path.Combine(System.IO.Path.GetDirectoryName(WatchFile), SETTINGS_FILE); }
+            catch (Exception) { return SETTINGS_FILE; }
+        }
+
+        void LoadSettings()
+        {
+            try
+            {
+                string f = SettingsFile();
+                if (!System.IO.File.Exists(f)) return;
+                foreach (string line in System.IO.File.ReadAllLines(f))
+                {
+                    string l = line.Trim();
+                    if (!l.StartsWith("tab=", StringComparison.OrdinalIgnoreCase)) continue;
+                    var tabs = new List<int>();
+                    foreach (string t in l.Substring(4).Split(','))
+                    {
+                        int v;
+                        if (int.TryParse(t.Trim(), out v) && v >= 1 && v <= 64) tabs.Add(v);
+                    }
+                    if (tabs.Count > 0) Plugin.SetTabs(tabs.ToArray());
+                }
+            }
+            catch (Exception ex) { Console.WriteLine(" Monitor: couldn't read settings: " + ex.Message); }
+        }
+
+        void SaveSettings()
+        {
+            try
+            {
+                System.IO.File.WriteAllLines(SettingsFile(), new[] { "; CSpect Monitor settings", "tab=" + string.Join(",", Plugin.GetTabs()) });
+            }
+            catch (Exception ex) { ShowCommandMessage("Couldn't save the settings: " + ex.Message, true); }
         }
 
         void SaveWatches()

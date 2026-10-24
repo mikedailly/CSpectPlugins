@@ -227,6 +227,57 @@ namespace Monitor
         public void SetSourceLines(int _lines) { lock (Gate) SrcLines = Math.Max(1, Math.Min(200, _lines)); }
         public void SetSourceVisible(int _count) { lock (Gate) SrcVisible = Math.Max(0, _count); }
 
+        // ---- tabs: the source files are read here, with their tabs, so they can be expanded to the TAB setting ----
+        /// <summary>Tab widths: each tab in turn, the last one repeating ("TAB 4,4,4,8")</summary>
+        int[] Tabs = { 4 };
+        /// <summary>Each file as read from disk (null: couldn't - CSpect's copy, its tabs already expanded, is used)</summary>
+        readonly Dictionary<int, string[]> RawSource = new Dictionary<int, string[]>();
+
+        /// <summary>Set the tab widths (any thread)</summary>
+        public void SetTabs(int[] _tabs) { lock (Gate) Tabs = (int[])_tabs.Clone(); }
+        public int[] GetTabs() { lock (Gate) return (int[])Tabs.Clone(); }
+
+        /// <summary>A source line (1 = first) with its tabs expanded to the tab setting</summary>
+        string SourceLine(int _file, string[] _cspect, int _line)
+        {
+            string[] raw;
+            if (!RawSource.TryGetValue(_file, out raw))
+            {
+                raw = null;
+                try
+                {
+                    string name = SourceFileNames[_file];
+                    if (System.IO.File.Exists(name))
+                    {
+                        raw = System.IO.File.ReadAllLines(name);
+                        if (raw.Length != _cspect.Length) raw = null;          // not the file CSpect read - use its copy
+                    }
+                }
+                catch (Exception) { raw = null; }
+                RawSource[_file] = raw;
+            }
+            if (raw == null) return _cspect[_line - 1] ?? "";
+            int[] tabs;
+            lock (Gate) tabs = Tabs;
+            return ExpandTabs(raw[_line - 1] ?? "", tabs);
+        }
+
+        /// <summary>Tabs to spaces: the n'th tab stop is the sum of the first n widths (the last width repeating)</summary>
+        public static string ExpandTabs(string _line, int[] _tabs)
+        {
+            if (_line.IndexOf('\t') < 0) return _line;
+            var sb = new System.Text.StringBuilder(_line.Length + 16);
+            int stop = 0, n = 0;                        // the next tab stop, and which width made it
+            foreach (char c in _line)
+            {
+                if (c != '\t') { sb.Append(c); continue; }
+                // find the first tab stop past the column we're in
+                while (stop <= sb.Length) { stop += _tabs[Math.Min(n, _tabs.Length - 1)]; n++; }
+                sb.Append(' ', stop - sb.Length);
+            }
+            return sb.ToString();
+        }
+
         /// <summary>Is this word a label? (case insensitive, remembered - cleared when the CPU stops, in case symbols reload)</summary>
         readonly Dictionary<string, bool> IsLabelCache = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
 
@@ -297,6 +348,7 @@ namespace Monitor
         void ReadSourceFiles()
         {
             IsLabelCache.Clear();
+            RawSource.Clear();
             FileScopes.Clear();
             try { SourceFileNames = CSpect.GetSourceFiles().ToArray(); }
             catch (Exception) { SourceFileNames = new string[0]; }         // older CSpect
@@ -1049,7 +1101,7 @@ namespace Monitor
             var rows = new List<SourceRow>(lines);
             for (int i = 0; i < lines && top + i <= text.Length; i++)
             {
-                var row = new SourceRow { Line = top + i, Text = text[top + i - 1] ?? "" };
+                var row = new SourceRow { Line = top + i, Text = SourceLine(file, text, top + i) };
                 row.Labels = LabelWords(row.Text, ScopeAt(file, text, row.Line));
                 try { row.Address = CSpect.GetSourceAddress(file, row.Line); } catch (Exception) { row.Address = -1; }
                 if (row.Address >= 0)
