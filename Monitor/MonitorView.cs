@@ -1433,6 +1433,8 @@ namespace Monitor
             public int Edit = -1;
             public string EditText = "";
             public bool EditFocus;
+            /// <summary>Put the cursor in the add box next frame</summary>
+            public bool AddFocus;
             /// <summary>The values when the CPU last stopped (to show what the last step changed)</summary>
             public WatchResult[] Prev;
         }
@@ -1520,7 +1522,7 @@ namespace Monitor
             float addH = ImGui.GetFrameHeightWithSpacing();
             if (ImGui.BeginChild("##watchrows", new Vector2(0, -addH), ImGuiChildFlags.None, WheelFlags()))
             {
-                if (wv.Watches.Count == 0) TextDim("No watches yet - add one below, e.g.  score,w   hl,b,8   ix+offset,w   10:$0000,t,0");
+                if (wv.Watches.Count == 0) TextDim("No watches yet - double click here or use the box below, e.g.  score,w   hl,8   ix+offset,w   10:$0000,t,0");
                 else if (ImGui.BeginTable("##watches", 4, ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerV | ImGuiTableFlags.Resizable))
                 {
                     ImGui.TableSetupColumn("Watch", ImGuiTableColumnFlags.WidthFixed, S(170));
@@ -1577,10 +1579,14 @@ namespace Monitor
                     ImGui.EndTable();
                     if (remove >= 0) { wv.Watches.RemoveAt(remove); wv.Edit = -1; WatchesChanged(_set); }
                 }
+                // double click a space (not a watch - that edits it): start a new one
+                if (ImGui.IsWindowHovered() && !ImGui.IsAnyItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)) wv.AddFocus = true;
             }
             ImGui.EndChild();
 
             ImGui.SetNextItemWidth(-1);
+            // (once the double click's button is up - the release would take the focus straight back)
+            if (wv.AddFocus && !ImGui.IsMouseDown(ImGuiMouseButton.Left)) { ImGui.SetKeyboardFocusHere(); wv.AddFocus = false; }
             if (ImGui.InputTextWithHint("##addwatch", "Add a watch: label,b,3   hl,w,4   $1234+hl+(a*4),b,10   $00:$1234,t,0   (b w l t, count; t,0 = to a 0 byte)",
                                         ref wv.Input, 128, ImGuiInputTextFlags.EnterReturnsTrue))
             {
