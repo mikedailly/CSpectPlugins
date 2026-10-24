@@ -92,6 +92,9 @@ namespace Monitor
         /// <summary>The source line PC is on (null if PC's code has no source line)</summary>
         public SourceLocation PCSource;
 
+        /// <summary>The watch window's watches, in order</summary>
+        public WatchResult[] Watches = new WatchResult[0];
+
         /// <summary>Physical address -> 64k address, if its 8K bank is paged in right now (else -1)</summary>
         public int ToLogical(int _physical)
         {
@@ -118,6 +121,26 @@ namespace Monitor
         public string Name;
         public int Address;
         public bool Physical;
+    }
+
+    // *********************************************************************************************************
+    /// <summary>
+    ///     One watch, worked out on the emulator thread every frame
+    /// </summary>
+    // *********************************************************************************************************
+    public sealed class WatchResult
+    {
+        /// <summary>The watch as typed</summary>
+        public string Expr;
+        /// <summary>The address it looked at ($XXXX or bank:$offset), or null</summary>
+        public string Where;
+        public int Address = -1;
+        public bool Physical;
+        /// <summary>The value(s) - or what's wrong with the watch</summary>
+        public string Value;
+        /// <summary>More detail (decimal values, the register), for a tooltip</summary>
+        public string Tip;
+        public bool Error;
     }
 
     // *********************************************************************************************************

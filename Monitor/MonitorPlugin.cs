@@ -677,6 +677,7 @@ namespace Monitor
 
             UpdateSymbolMatches(s);
             CaptureSource(s);
+            CaptureWatches(s, _stopped);
 
             if (physCount > 0)
             {
@@ -694,6 +695,141 @@ namespace Monitor
                 s.StackLabels[i] = Label(word);
             }
             return s;
+        }
+
+        // ******************************************************************************************
+        //  Watches: "where[,size[,count]]"
+        //      where   $1234, 4660, bank:offset, a label (+/- offset), or a register pair (HL, IX+2, HL'...) -
+        //              the memory it points to
+        //      size    b byte (default), w 16 bit, l 32 bit, t text
+        //      count   how many (default 1); for text, characters - 0 (the default) = up to a 0 byte
+        // ******************************************************************************************
+        string[] WatchExprs = new string[0];
+        const int MAX_WATCH = 256;
+
+        /// <summary>The watches to work out every frame (any thread)</summary>
+        public void SetWatches(string[] _watches) { lock (Gate) WatchExprs = (string[])_watches.Clone(); }
+
+        void CaptureWatches(MonitorSnapshot s, bool _stopped)
+        {
+            string[] w;
+            lock (Gate) w = WatchExprs;
+            var results = new WatchResult[w.Length];
+            Z80Regs live = _stopped ? s.Regs : null;         // running: registers read live, once, only if a watch uses them
+            for (int i = 0; i < w.Length; i++)
+            {
+                try { results[i] = EvalWatch(w[i], ref live); }
+                catch (Exception ex) { results[i] = new WatchResult { Expr = w[i], Value = ex.Message, Error = true }; }
+            }
+            s.Watches = results;
+        }
+
+        WatchResult EvalWatch(string _expr, ref Z80Regs _regs)
+        {
+            var r = new WatchResult { Expr = _expr, Error = true };
+            string[] parts = (_expr ?? "").Split(',');
+            for (int i = 0; i < parts.Length; i++) parts[i] = parts[i].Trim();
+            if (parts[0].Length == 0) { r.Value = "Expected an address, label or register"; return r; }
+            if (parts.Length > 3) { r.Value = "Too many parts - where,size,count"; return r; }
+            char size = 'b';
+            if (parts.Length > 1 && parts[1].Length > 0)
+            {
+                string z = parts[1].ToLowerInvariant();
+                if (z != "b" && z != "w" && z != "l" && z != "t") { r.Value = "Size '" + parts[1] + "' - use b, w, l or t"; return r; }
+                size = z[0];
+            }
+            int count = size == 't' ? 0 : 1;
+            if (parts.Length > 2 && parts[2].Length > 0)
+            {
+                if (!MonitorAddress.TryNumber(parts[2], out count) || count < 0) { r.Value = "Count '" + parts[2] + "' isn't a number"; return r; }
+                if (count == 0 && size != 't') { r.Value = "Count must be 1 or more (0 is for null terminated text)"; return r; }
+            }
+            count = Math.Min(count, MAX_WATCH);
+
+            int a; bool phys; string reg, err;
+            if (!WatchAddress(parts[0], ref _regs, out a, out phys, out reg, out err)) { r.Value = err; return r; }
+            r.Address = a; r.Physical = phys;
+            r.Where = MonitorAddress.Format(a, phys);
+            int unit = size == 'w' ? 2 : size == 'l' ? 4 : 1;
+            byte[] m = ReadMemory(a, phys, size == 't' ? (count == 0 ? MAX_WATCH : count) : count * unit);
+            var text = new System.Text.StringBuilder();
+            var dec = new System.Text.StringBuilder();
+            if (size == 't')
+            {
+                int n = m.Length;
+                if (count == 0) { n = Array.IndexOf(m, (byte)0); if (n < 0) n = m.Length; }
+                text.Append('"');
+                for (int i = 0; i < n; i++) text.Append(m[i] >= 32 && m[i] < 127 ? (char)m[i] : '.');
+                text.Append('"');
+                if (count == 0 && n == m.Length) text.Append("...");
+                dec.Append(n + " characters");
+            }
+            else
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    long v = 0;
+                    for (int b = unit - 1; b >= 0; b--) v = (v << 8) | m[i * unit + b];          // little endian
+                    if (i > 0) { text.Append(' '); dec.Append(' '); }
+                    text.Append('$').Append(v.ToString(unit == 1 ? "X2" : unit == 2 ? "X4" : "X8"));
+                    dec.Append(v);
+                }
+                if (count == 1) text.Append("  ").Append(dec);      // one value: decimal alongside
+            }
+            r.Value = text.ToString();
+            r.Tip = (reg != null ? reg + " -> " : "") + r.Where + "\n" + dec;
+            r.Error = false;
+            return r;
+        }
+
+        /// <summary>Where a watch looks: a number, bank:offset, a register pair (the memory it points to), or a label</summary>
+        bool WatchAddress(string _text, ref Z80Regs _regs, out int _address, out bool _physical, out string _reg, out string _error)
+        {
+            _address = 0; _physical = false; _reg = null; _error = null;
+            if (MonitorAddress.TryParse(_text, out _address, out _physical)) return true;
+            string name; int offset;
+            if (!MonitorAddress.TrySplitSymbol(_text, out name, out offset)) { _error = "'" + _text + "' isn't an address, register or label"; return false; }
+            string up = name.ToUpperInvariant();
+            if (Array.IndexOf(WatchRegisters, up) >= 0)
+            {
+                if (_regs == null) _regs = CSpect.GetRegs();
+                int v = RegisterPair(_regs, up);
+                _address = (v + offset) & 0xffff;
+                _reg = up + "=$" + v.ToString("X4") + (offset != 0 ? (offset > 0 ? "+" : "") + offset : "");
+                return true;
+            }
+            if (!ResolveSymbol(name, out _address, out _physical)) { _error = "Unknown label '" + name + "'"; return false; }
+            _address = Wrap(_address + offset, _physical);
+            return true;
+        }
+
+        static readonly string[] WatchRegisters = { "AF", "BC", "DE", "HL", "IX", "IY", "SP", "PC", "AF'", "BC'", "DE'", "HL'" };
+
+        static int RegisterPair(Z80Regs r, string _name)
+        {
+            switch (_name)
+            {
+                case "AF": return r.AF; case "BC": return r.BC; case "DE": return r.DE; case "HL": return r.HL;
+                case "IX": return r.IX; case "IY": return r.IY; case "SP": return r.SP; case "PC": return r.PC;
+                case "AF'": return r._AF; case "BC'": return r._BC; case "DE'": return r._DE; case "HL'": return r._HL;
+            }
+            return 0;
+        }
+
+        /// <summary>_count bytes from a 64K or physical address, wrapping at the end</summary>
+        byte[] ReadMemory(int _address, bool _physical, int _count)
+        {
+            var r = new byte[_count];
+            int limit = _physical ? MonitorAddress.PhysicalSize : 0x10000, done = 0;
+            while (done < _count)
+            {
+                int at = (_address + done) % limit;
+                int chunk = Math.Min(_count - done, limit - at);
+                byte[] b = _physical ? CSpect.PeekPhysical(at, chunk) : CSpect.Peek((ushort)at, chunk);
+                Array.Copy(b, 0, r, done, Math.Min(chunk, b.Length));
+                done += chunk;
+            }
+            return r;
         }
 
         // ******************************************************************************************
