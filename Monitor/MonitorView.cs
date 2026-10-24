@@ -48,7 +48,7 @@ namespace Monitor
         MonitorPlugin Plugin;
 
         // pane sizes, as fractions so they scale with the window
-        internal float SplitX = 0.64f;          // left column width
+        internal float SplitX = 0.64f;          // left column width          (DEFAULT_SPLIT_X etc)
         internal float SplitLeftY = 0.60f;      // disassembly / memory
         internal float SplitRightY = 0.42f;     // registers / stack
         /// <summary>Registers pane content size (measured as it's drawn), and whether the splits have been fitted to it yet</summary>
@@ -163,6 +163,7 @@ namespace Monitor
                 else DrawPanes(s);
             }
             ImGui.End();
+            SavePreferencesIfChanged(false);
         }
 
         // ****************************************************************************************
@@ -203,6 +204,12 @@ namespace Monitor
                     bool w = WatchViews[i].Enabled;
                     if (ImGui.MenuItem("Watch " + (i + 1), null, ref w)) { WatchViews[i].Enabled = w; if (w) SelectWatch = i; SaveWatches(); }
                 }
+                ImGui.EndMenu();
+            }
+            if (ImGui.BeginMenu("View"))
+            {
+                if (ImGui.MenuItem("Reset layout")) ResetLayout();
+                if (ImGui.IsItemHovered()) Tip("The default window size and place, panes, font size, memory tabs and tick boxes\n(watches and the TAB setting are kept)");
                 ImGui.EndMenu();
             }
             ImGui.EndMenuBar();
@@ -617,7 +624,7 @@ namespace Monitor
                     tabs.Add(v);
                 }
                 Plugin.SetTabs(tabs.ToArray());
-                SaveSettings();
+                SavePreferencesIfChanged(true);
                 ShowCommandMessage("Tabs: " + string.Join(",", tabs), false);
                 return;
             }
@@ -1531,44 +1538,149 @@ namespace Monitor
             catch (Exception ex) { Console.WriteLine(" Monitor: couldn't read " + WatchFile + ": " + ex.Message); }
         }
 
-        // ---- other settings (the source view's tabs), kept next to the watches ----
-        internal const string SETTINGS_FILE = "monitor_settings.txt";
+        // ****************************************************************************************
+        //  Preferences: the layout (window place and size, panes, font size, memory tabs, tick boxes) and the
+        //  TAB setting, kept in monitor_preferences.txt next to the watches. Saved whenever they change.
+        // ****************************************************************************************
+        internal const string PREFS_FILE = "monitor_preferences.txt";
+        /// <summary>The older file that held just the TAB setting - read if there's no preferences file yet</summary>
+        internal const string OLD_SETTINGS_FILE = "monitor_settings.txt";
+        const float DEFAULT_SPLIT_X = 0.64f, DEFAULT_SPLIT_LEFT_Y = 0.60f, DEFAULT_SPLIT_RIGHT_Y = 0.42f;
+        /// <summary>The window's place and size: x, y, width, height (null = the default)</summary>
+        internal int[] SavedWindow;
+        /// <summary>The preferences as last written (only written again when they change)</summary>
+        string LastPrefs;
+        int PrefsCheck;
 
-        string SettingsFile()
+        string PrefsPath(string _name)
         {
-            try { return System.IO.Path.Combine(System.IO.Path.GetDirectoryName(WatchFile), SETTINGS_FILE); }
-            catch (Exception) { return SETTINGS_FILE; }
+            try { return System.IO.Path.Combine(System.IO.Path.GetDirectoryName(WatchFile), _name); }
+            catch (Exception) { return _name; }
+        }
+
+        string BuildPreferences()
+        {
+            var c = System.Globalization.CultureInfo.InvariantCulture;
+            var l = new List<string> { "; CSpect Monitor preferences (View > Reset layout puts the layout back)" };
+            l.Add("tab=" + string.Join(",", Plugin.GetTabs()));
+            l.Add("font=" + FontScale.ToString("0.0", c));
+            l.Add("panes=" + SplitX.ToString("0.####", c) + "," + SplitLeftY.ToString("0.####", c) + "," + SplitRightY.ToString("0.####", c));
+            if (SavedWindow != null) l.Add("window=" + string.Join(",", SavedWindow));
+            l.Add("symbols=" + (ShowSymbols ? 1 : 0));
+            l.Add("source=" + (SourceView ? 1 : 0));
+            for (int i = 0; i < MEM_VIEWS; i++)
+            {
+                MemView m = Mems[i];
+                l.Add("memory" + (i + 1) + "=" + (m.Enabled ? 1 : 0) + "," + (m.Physical ? 1 : 0) + "," + m.TopAddress + "," + m.Follow);
+            }
+            return string.Join("\n", l);
         }
 
         void LoadSettings()
         {
             try
             {
-                string f = SettingsFile();
+                string f = PrefsPath(PREFS_FILE);
+                if (!System.IO.File.Exists(f)) f = PrefsPath(OLD_SETTINGS_FILE);
                 if (!System.IO.File.Exists(f)) return;
+                var c = System.Globalization.CultureInfo.InvariantCulture;
                 foreach (string line in System.IO.File.ReadAllLines(f))
                 {
-                    string l = line.Trim();
-                    if (!l.StartsWith("tab=", StringComparison.OrdinalIgnoreCase)) continue;
-                    var tabs = new List<int>();
-                    foreach (string t in l.Substring(4).Split(','))
+                    string t = line.Trim();
+                    int eq = t.IndexOf('=');
+                    if (t.StartsWith(";") || eq < 0) continue;
+                    string key = t.Substring(0, eq).Trim().ToLowerInvariant();
+                    string[] v = t.Substring(eq + 1).Split(',');
+                    int n; float fl;
+                    switch (key)
                     {
-                        int v;
-                        if (int.TryParse(t.Trim(), out v) && v >= 1 && v <= 64) tabs.Add(v);
+                        case "tab":
+                        {
+                            var tabs = new List<int>();
+                            foreach (string x in v) if (int.TryParse(x.Trim(), out n) && n >= 1 && n <= 64) tabs.Add(n);
+                            if (tabs.Count > 0) Plugin.SetTabs(tabs.ToArray());
+                            break;
+                        }
+                        case "font":
+                            if (float.TryParse(v[0], System.Globalization.NumberStyles.Float, c, out fl)) FontScale = Clamp(fl, MIN_SCALE, MAX_SCALE);
+                            break;
+                        case "panes":
+                        {
+                            float a, b2, d;
+                            if (v.Length == 3 && float.TryParse(v[0], System.Globalization.NumberStyles.Float, c, out a) &&
+                                float.TryParse(v[1], System.Globalization.NumberStyles.Float, c, out b2) && float.TryParse(v[2], System.Globalization.NumberStyles.Float, c, out d))
+                            {
+                                SplitX = Clamp(a, 0.1f, 0.9f); SplitLeftY = Clamp(b2, 0.1f, 0.9f); SplitRightY = Clamp(d, 0.1f, 0.9f);
+                                LayoutFitted = true;            // as saved - not fitted to the registers again
+                            }
+                            break;
+                        }
+                        case "window":
+                        {
+                            int x, y, w, h;
+                            if (v.Length == 4 && int.TryParse(v[0], out x) && int.TryParse(v[1], out y) && int.TryParse(v[2], out w) && int.TryParse(v[3], out h) && w >= 200 && h >= 150)
+                                SavedWindow = new[] { x, y, w, h };
+                            break;
+                        }
+                        case "symbols": ShowSymbols = v[0].Trim() != "0"; break;
+                        case "source":
+                            SourceView = v[0].Trim() == "1";
+                            Plugin.SetSourceMode(SourceView);
+                            break;
+                        default:
+                            if (key.StartsWith("memory") && int.TryParse(key.Substring(6), out n) && n >= 1 && n <= MEM_VIEWS && v.Length == 4)
+                            {
+                                MemView m = Mems[n - 1];
+                                int top, follow;
+                                m.Enabled = v[0].Trim() == "1";
+                                m.Physical = v[1].Trim() == "1";
+                                if (int.TryParse(v[2], out top)) { m.TopAddress = top; m.ScrollTo = top; }
+                                if (int.TryParse(v[3], out follow) && follow >= 0 && follow < FollowNames.Length) m.Follow = follow;
+                            }
+                            break;
                     }
-                    if (tabs.Count > 0) Plugin.SetTabs(tabs.ToArray());
                 }
+                if (!Array.Exists(Mems, m => m.Enabled) && !Array.Exists(WatchViews, w => w.Enabled)) Mems[0].Enabled = true;
+                ActiveMem = Math.Max(0, Array.FindIndex(Mems, m => m.Enabled));
             }
-            catch (Exception ex) { Console.WriteLine(" Monitor: couldn't read settings: " + ex.Message); }
+            catch (Exception ex) { Console.WriteLine(" Monitor: couldn't read preferences: " + ex.Message); }
+            LastPrefs = BuildPreferences();
         }
 
-        void SaveSettings()
+        /// <summary>Write the preferences if they've changed (checked a few times a second; not while dragging)</summary>
+        void SavePreferencesIfChanged(bool _now)
         {
+            if (!_now && (++PrefsCheck % 20 != 0 || ImGui.IsMouseDown(ImGuiMouseButton.Left))) return;
+            int x, y, w, h;
+            if (Plugin.GetWindowRect(out x, out y, out w, out h)) SavedWindow = new[] { x, y, w, h };
+            string p = BuildPreferences();
+            if (p == LastPrefs) return;
             try
             {
-                System.IO.File.WriteAllLines(SettingsFile(), new[] { "; CSpect Monitor settings", "tab=" + string.Join(",", Plugin.GetTabs()) });
+                System.IO.File.WriteAllText(PrefsPath(PREFS_FILE), p.Replace("\n", Environment.NewLine) + Environment.NewLine);
+                LastPrefs = p;
             }
-            catch (Exception ex) { ShowCommandMessage("Couldn't save the settings: " + ex.Message, true); }
+            catch (Exception ex) { ShowCommandMessage("Couldn't save the preferences: " + ex.Message, true); LastPrefs = p; }
+        }
+
+        /// <summary>View > Reset layout: the default window size and place, panes, font size, memory tab and tick boxes</summary>
+        internal void ResetLayout()
+        {
+            SplitX = DEFAULT_SPLIT_X; SplitLeftY = DEFAULT_SPLIT_LEFT_Y; SplitRightY = DEFAULT_SPLIT_RIGHT_Y;
+            LayoutFitted = false;                   // fit the registers/stack column again
+            FontScale = 1.0f;
+            for (int i = 0; i < MEM_VIEWS; i++)
+            {
+                MemView m = Mems[i];
+                m.Enabled = i == 0; m.Physical = false; m.Follow = 0; m.FollowLast = -1; m.TopAddress = 0; m.ScrollTo = 0;
+                m.Box.Text = ""; m.Box.Error = null;
+            }
+            ActiveMem = 0; SelectMem = 0;
+            ShowSymbols = true;
+            if (SourceView) { SourceView = false; Plugin.SetSourceMode(false); }
+            SavedWindow = null;
+            Plugin.ReopenWindow();                  // at the default size and place
+            SavePreferencesIfChanged(true);
         }
 
         void SaveWatches()

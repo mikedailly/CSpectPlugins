@@ -88,6 +88,24 @@ namespace Monitor
         /// <summary>"Run to here" breakpoint to remove when we next stop (-1 = none)</summary>
         int TempBreakpoint = -1;
         bool RemoteSet;
+        internal const int DEFAULT_WIDTH = 1100, DEFAULT_HEIGHT = 760;
+        volatile bool ReopenRequested;
+        /// <summary>The window Reset layout closed, until its OnClosed arrives</summary>
+        iWindow ReopeningWindow;
+
+        /// <summary>Close the window and open it again at the default size and place (Reset layout) - next OS frame</summary>
+        public void ReopenWindow() { ReopenRequested = true; }
+
+        /// <summary>The window's place and size (OS thread). False if CSpect can't say (an older CSpect).</summary>
+        public bool GetWindowRect(out int _x, out int _y, out int _w, out int _h)
+        {
+            _x = _y = _w = _h = 0;
+            iWindow w = Window;
+            if (w == null || !WindowPositionWorks || ReopenRequested) return false;     // (about to be replaced: not its place)
+            try { _x = w.X; _y = w.Y; _w = w.Width; _h = w.Height; return _w > 0 && _h > 0; }
+            catch (Exception) { WindowPositionWorks = false; return false; }
+        }
+        bool WindowPositionWorks = true;
         /// <summary>The window was closed: run, if we're stopped</summary>
         volatile bool RunOnClose;
         int LastStart = -1, LastCount = 0;
@@ -147,13 +165,32 @@ namespace Monitor
         // ******************************************************************************************
         public void OSTick()
         {
+            // Reset layout: close the window and open it again at the default size and place (not "closed": no run)
+            if (ReopenRequested)
+            {
+                ReopenRequested = false;
+                if (Window != null)
+                {
+                    // its OnClosed comes later (CSpect ticks a closed window once more) - and is ignored: see Window_OnClosed
+                    ReopeningWindow = Window;
+                    Window = null;
+                    ReopeningWindow.Close();
+                    OpenRequested = true;
+                }
+            }
             if (!OpenRequested) return;
             OpenRequested = false;
             if (Window != null) return;
 
-            iWindow w = CSpect.OpenWindow(Title, 1100, 760);
-            if (w == null) return;
             if (View == null) View = new MonitorView(this);
+            // the size and place it was last time (the preferences file), else the default
+            int[] r = View.SavedWindow;
+            iWindow w = CSpect.OpenWindow(Title, r != null ? r[2] : DEFAULT_WIDTH, r != null ? r[3] : DEFAULT_HEIGHT);
+            if (w == null) return;
+            if (r != null)
+            {
+                try { w.X = r[0]; w.Y = r[1]; } catch (Exception) { }       // (an older CSpect can't move plugin windows)
+            }
             if (!w.SetImGuiDraw(View.Draw))
             {
                 Console.WriteLine(" Monitor: Dear ImGui not available on this system");
@@ -175,6 +212,9 @@ namespace Monitor
 
         private void Window_OnClosed(object sender, EventArgs e)
         {
+            // the window Reset layout replaced - it's already been dealt with (its replacement may be open by now)
+            if (sender != null && sender == ReopeningWindow) { ReopeningWindow = null; return; }
+            if (sender != null && Window != null && sender != Window) return;
             Active = false;
             Window = null;
             lock (Gate) Commands.Clear();
