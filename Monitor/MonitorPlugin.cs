@@ -110,6 +110,19 @@ namespace Monitor
             return true;                // handled - CSpect clears the keyboard so the Next doesn't see it
         }
 
+        // *********************************************************************************************************
+        /// <summary>
+        ///     Open the Monitor (CSpect calls this whenever it stops, when run with -monitor). Any thread.
+        /// </summary>
+        /// <returns>true - so CSpect knows the Monitor is here</returns>
+        // *********************************************************************************************************
+        [Function("monitor_open", "none", "Open the Monitor window (CSpect -monitor uses this as its debugger)")]
+        public bool OpenMonitor()
+        {
+            OpenRequested = true;
+            return true;
+        }
+
         public byte Read(eAccess _type, int _address, int _id, out bool _isvalid) { _isvalid = false; return 0; }
         public bool Write(eAccess _type, int _port, int _id, byte _value) { return false; }
         public void Reset() { }
