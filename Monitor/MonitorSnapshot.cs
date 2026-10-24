@@ -122,6 +122,21 @@ namespace Monitor
 
     // *********************************************************************************************************
     /// <summary>
+    ///     The result of a command line (run on the emulator thread)
+    /// </summary>
+    // *********************************************************************************************************
+    public sealed class CommandResult
+    {
+        /// <summary>Goes up by one for every command, so the UI knows it's new</summary>
+        public int Sequence;
+        public string Command;
+        /// <summary>What CSpect said (null = nothing)</summary>
+        public string Message;
+        public bool Error;
+    }
+
+    // *********************************************************************************************************
+    /// <summary>
     ///     The result of a symbol Goto (resolved on the emulator thread)
     /// </summary>
     // *********************************************************************************************************

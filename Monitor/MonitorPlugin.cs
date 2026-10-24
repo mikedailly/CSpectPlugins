@@ -440,6 +440,30 @@ namespace Monitor
             });
         }
 
+        // ******************************************************************************************
+        /// <summary>
+        ///     Run a command line through CSpect's own debugger command parser (BR, POKE, registers, SAVE...).
+        ///     The answer appears in LastCommand.
+        /// </summary>
+        // ******************************************************************************************
+        public void Command(string _text)
+        {
+            Queue(delegate
+            {
+                var r = new CommandResult { Sequence = ++CommandSequence, Command = _text };
+                try { r.Message = CSpect.DebugCommand(_text); }
+                catch (Exception ex) { r.Message = "Error: " + ex.Message; r.Error = true; }
+                if (r.Message != null && r.Message.IndexOf("error", StringComparison.OrdinalIgnoreCase) >= 0) r.Error = true;
+                RereadRegisters = true;                     // it may have changed them (shown even while running)
+                LastCommandResult = r;
+            });
+        }
+        int CommandSequence;
+        volatile CommandResult LastCommandResult;
+        bool RereadRegisters;
+        /// <summary>The last command line's result (null if none yet)</summary>
+        public CommandResult LastCommand { get { return LastCommandResult; } }
+
         /// <summary>The last symbol Goto for a box (null if none yet)</summary>
         public GotoResult LastGoto(int _target) { return GotoResults[_target]; }
 
@@ -593,7 +617,8 @@ namespace Monitor
             s.Remote = RemoteSet;
             // registers (and flags) are read while stopped; running, they stay as they were (the first frame reads them)
             MonitorSnapshot last = Latest;
-            s.Regs = (_stopped || last == null || last.Regs == null) ? CSpect.GetRegs() : last.Regs;
+            s.Regs = (_stopped || last == null || last.Regs == null || RereadRegisters) ? CSpect.GetRegs() : last.Regs;
+            RereadRegisters = false;
             s.Memory = CSpect.Peek(0, 65536);
             s.Mmu = new byte[8];
             for (int i = 0; i < 8; i++) s.Mmu[i] = CSpect.GetNextRegister((byte)(0x50 + i));

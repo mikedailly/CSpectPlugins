@@ -10,7 +10,9 @@
 using ImGuiNET;
 using Plugin;
 using System;
+using System.Collections.Generic;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace Monitor
@@ -236,7 +238,7 @@ namespace Monitor
             // Keys typed into the Monitor never reach the emulator - CSpect would act on them too (its own debugger
             // steps on F7/F8, and F8 toggles VSync while running). This only covers the Monitor's own OS window.
             ImGui.SetNextFrameWantCaptureKeyboard(true);
-            if (s == null || ImGui.GetIO().WantTextInput) return;
+            if (s == null) return;          // (function keys work even while typing - no text box uses them)
             if (ImGui.IsKeyPressed(ImGuiKey.F1, false)) { if (s.Stopped) Plugin.Run(); else Plugin.Break(); return; }
             bool f7 = ImGui.IsKeyPressed(ImGuiKey.F7), f8 = ImGui.IsKeyPressed(ImGuiKey.F8), f9 = ImGui.IsKeyPressed(ImGuiKey.F9, false);
             if (f7 && s.Stopped) DoStep(false);
@@ -296,6 +298,7 @@ namespace Monitor
         {
             Vector2 origin = ImGui.GetCursorPos();
             Vector2 avail = ImGui.GetContentRegionAvail();
+            avail.Y -= CommandBarHeight();          // the command line goes underneath, the full width of the window
             float W = Math.Max(avail.X, MIN_PANE * 2 + SPLIT), H = Math.Max(avail.Y, MIN_PANE * 2 + SPLIT);
             if (!LayoutFitted && RegsNeed.X > 0) FitRightColumn(W, H);
 
@@ -326,6 +329,182 @@ namespace Monitor
             Splitter("##splitRight", new Vector2(rightX, origin.Y + rightTop), new Vector2(rightW, SPLIT), false, ref SplitRightY, H);
             ImGui.SetCursorPos(new Vector2(rightX, origin.Y + rightTop + SPLIT));
             Pane("Stack", "##stack", new Vector2(rightW, H - rightTop - SPLIT), WheelFlags(), () => DrawStack(s));
+
+            ImGui.SetCursorPos(new Vector2(origin.X, origin.Y + H + ImGui.GetStyle().ItemSpacing.Y));
+            DrawCommandLine(s);
+        }
+
+        // ****************************************************************************************
+        //  Command line: CSpect's debugger commands (BR, POKE, registers, SAVE...), run by CSpect's own
+        //  command parser, plus M and G, which move the Monitor's own memory and disassembly views.
+        //  Up/Down: history. HELP (or ?): the list of commands.
+        // ****************************************************************************************
+        string CmdText = "";
+        readonly List<string> CmdHistory = new List<string>();
+        /// <summary>Where Up/Down is in the history (CmdHistory.Count = the line being typed)</summary>
+        int CmdHistoryPos;
+        string CmdTyped = "";
+        bool CmdRefocus;
+        internal bool ShowCommandHelp;
+        internal string CmdMessage;
+        bool CmdError;
+        double CmdMessageTime;
+        int CmdSeenSequence;
+        ImGuiInputTextCallback CmdCallback;
+
+        /// <summary>First words CSpect's command parser understands (the rest of the line is its business)</summary>
+        static readonly HashSet<string> CommandWords = new HashSet<string>
+        {
+            "BR", "WRITE", "READ", "PWRITE", "INPORT", "OUTPORT", "PUSH", "POP", "POKE", "TONE", "NEXTBRK", "LOG", "NEXTREG",
+            "OUT", "SET", "CLR", "SAVE", "LOAD", "ROM", "REWIND",
+            "A", "A'", "F", "F'", "AF", "AF'", "B", "B'", "C", "C'", "BC", "BC'", "D", "D'", "E", "E'", "DE", "DE'",
+            "H", "H'", "L", "L'", "HL", "HL'", "IX", "IY", "SP", "PC", "IR"
+        };
+
+        static readonly string[] CommandHelp =
+        {
+            "Numbers are decimal, $hex or %binary; symbols and register names work too.",
+            "",
+            "M <address>             Set memory window base address (in normal 64k window)",
+            "M <bank>:<offset>       Set memory window into physical memory using bank/offset",
+            "G <address>             Goto address in disassembly window",
+            "G <bank>:<offset>       Goto address in physical memory using bank/offset",
+            "BR <address>            Toggle Breakpoint",
+            "BR <bank>:<offset>      Toggle Physical address breakpoint",
+            "WRITE <address>         Toggle a WRITE access break point",
+            "READ  <address>         Toggle a READ access break point (also when EXECUTED)",
+            "PWRITE <address>        Toggle a Physical Memory WRITE access break point",
+            "PWRITE <bank>:<offset>  Toggle a Physical Memory WRITE access break point",
+            "INPORT <16bitport>      Toggle a breakpoint on port READ",
+            "OUTPORT <16bitport>     Toggle a breakpoint on port WRITE",
+            "PUSH <value>            Push a 16 bit value onto the stack",
+            "POP                     Pop the top of the stack",
+            "POKE <add>,<val>        Poke a value into memory",
+            "TONE                    Toggle a test tone (checks the audio streaming)",
+            "NEXTBRK                 Toggle stopping in the debugger after a NEXT specific instruction",
+            "<reg> <value>           Set a register: A A' F F' AF AF' B C BC D E DE H L HL (and ' forms)",
+            "                        IX IY SP PC IR",
+            "LOG OUT [port]          Log port writes to [port] (all ports if none), when the value changes",
+            "LOG IN  [port]          Log port reads from [port] (all ports if none), when the value changes",
+            "NEXTREG <reg>,<val>     Poke a next register",
+            "OUT <port>,<value>      Out a value to a 16bit port",
+            "SET <type>,<start>,<end>  Set a range of breakpoints",
+            "CLR <type>,<start>,<end>  Clear a range of breakpoints",
+            "                        type: 0 Execute, 1 Read, 2 Write, 3 OutPort, 4 InPort",
+            "SAVE \"NAME\",add,len                   Save from the 64K memory space",
+            "SAVE \"NAME\",bank:offset,length        Save from physical memory",
+            "SAVE \"NAME\",bank:offset,bank:offset   Save from physical memory, start to end",
+            "LOAD \"NAME\",add[,len]                 Load into the 64K memory space",
+            "LOAD \"NAME\",bank:offset[,length]      Load into physical memory",
+            "",
+            "Up/Down: command history.  Esc: close this list."
+        };
+
+        float CommandBarHeight() { return ImGui.GetFrameHeight() + ImGui.GetStyle().ItemSpacing.Y; }
+
+        /// <summary>Up/Down in the command line: step through the history</summary>
+        unsafe int CommandHistoryCallback(ImGuiInputTextCallbackData* _data)
+        {
+            var d = new ImGuiInputTextCallbackDataPtr(_data);
+            if (d.EventFlag != ImGuiInputTextFlags.CallbackHistory || CmdHistory.Count == 0) return 0;
+            int pos = CmdHistoryPos;
+            if (pos == CmdHistory.Count)
+            {
+                // remember what was being typed, to come back to below the newest history line
+                byte[] typed = new byte[Math.Max(0, d.BufTextLen)];
+                if (typed.Length > 0) Marshal.Copy(d.Buf, typed, 0, typed.Length);
+                CmdTyped = Encoding.UTF8.GetString(typed);
+            }
+            if (d.EventKey == ImGuiKey.UpArrow) pos = Math.Max(0, pos - 1);
+            else if (d.EventKey == ImGuiKey.DownArrow) pos = Math.Min(CmdHistory.Count, pos + 1);
+            if (pos == CmdHistoryPos) return 0;
+            CmdHistoryPos = pos;
+            d.DeleteChars(0, d.BufTextLen);
+            d.InsertChars(0, pos == CmdHistory.Count ? CmdTyped : CmdHistory[pos]);
+            return 0;
+        }
+
+        void DrawCommandLine(MonitorSnapshot s)
+        {
+            CommandResult r = Plugin.LastCommand;
+            if (r != null && r.Sequence != CmdSeenSequence)
+            {
+                CmdSeenSequence = r.Sequence;
+                if (r.Message != null) ShowCommandMessage(r.Message, r.Error);
+            }
+
+            ImGui.AlignTextToFramePadding();
+            TextCol(ColLabel, ">");
+            ImGui.SameLine();
+            if (CmdRefocus) { ImGui.SetKeyboardFocusHere(); CmdRefocus = false; }
+            ImGui.SetNextItemWidth(-1);
+            unsafe { if (CmdCallback == null) CmdCallback = CommandHistoryCallback; }
+            bool enter = ImGui.InputTextWithHint("##cmd", "Debugger command - HELP for a list", ref CmdText, 256,
+                                                 ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.CallbackHistory, CmdCallback);
+            Vector2 boxMin = ImGui.GetItemRectMin(), boxMax = ImGui.GetItemRectMax();
+            if (enter)
+            {
+                string t = CmdText.Trim();
+                if (t.Length > 0)
+                {
+                    if (CmdHistory.Count == 0 || CmdHistory[CmdHistory.Count - 1] != t) CmdHistory.Add(t);
+                    if (CmdHistory.Count > 100) CmdHistory.RemoveAt(0);
+                    RunCommand(s, t);
+                }
+                CmdText = ""; CmdTyped = "";
+                CmdHistoryPos = CmdHistory.Count;
+                CmdRefocus = true;                  // keep typing
+            }
+            if (ShowCommandHelp && ImGui.IsKeyPressed(ImGuiKey.Escape)) ShowCommandHelp = false;
+
+            // help, or the last command's message, just above the command line
+            ImGuiWindowFlags pf = ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoSavedSettings |
+                                  ImGuiWindowFlags.NoFocusOnAppearing | ImGuiWindowFlags.NoNav;
+            if (ShowCommandHelp)
+            {
+                float lineH = ImGui.GetTextLineHeightWithSpacing();
+                float h = Math.Min(CommandHelp.Length * lineH + ImGui.GetStyle().WindowPadding.Y * 2, boxMin.Y - S(40));
+                ImGui.SetNextWindowPos(new Vector2(boxMin.X, boxMin.Y - 2), ImGuiCond.Always, new Vector2(0, 1));
+                ImGui.SetNextWindowSize(new Vector2(boxMax.X - boxMin.X, h));
+                ImGui.SetNextWindowBgAlpha(1.0f);
+                if (ImGui.Begin("##cmdhelp", pf))
+                    foreach (string line in CommandHelp) ImGui.TextUnformatted(line.Length == 0 ? " " : line);
+                ImGui.End();
+            }
+            else if (CmdMessage != null && ImGui.GetTime() - CmdMessageTime < 5.0)
+            {
+                ImGui.SetNextWindowPos(new Vector2(boxMin.X, boxMin.Y - 2), ImGuiCond.Always, new Vector2(0, 1));
+                ImGui.SetNextWindowBgAlpha(1.0f);
+                if (ImGui.Begin("##cmdmsg", pf | ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoInputs))
+                    TextCol(CmdError ? ColError : ColStopped, CmdMessage);
+                ImGui.End();
+            }
+        }
+
+        void ShowCommandMessage(string _text, bool _error)
+        {
+            CmdMessage = _text; CmdError = _error; CmdMessageTime = ImGui.GetTime();
+        }
+
+        /// <summary>A command line: M and G move our own views; HELP; anything else goes to CSpect's command parser</summary>
+        void RunCommand(MonitorSnapshot s, string _text)
+        {
+            CmdMessage = null;
+            int end = 0;
+            while (end < _text.Length && !char.IsWhiteSpace(_text[end])) end++;
+            string word = _text.Substring(0, end).ToUpperInvariant();
+            string arg = _text.Substring(end).Trim();
+            if (word == "HELP" || word == "?") { ShowCommandHelp = !ShowCommandHelp; return; }
+            ShowCommandHelp = false;
+            if (word == "M" || word == "G")
+            {
+                if (arg.Length == 0) { ShowCommandMessage(word + " <address>  or  " + word + " <bank>:<offset>", true); return; }
+                if (word == "M") { GotoBox b = CurrentMem().Box; b.Text = arg; Go(MonitorPlugin.TargetMemory, b); }
+                else { DisasmBox.Text = arg; Go(MonitorPlugin.TargetDisasm, DisasmBox); }
+                return;
+            }
+            if (!CommandWords.Contains(word)) { ShowCommandMessage("Unknown command '" + word + "' - type HELP for a list", true); return; }
+            Plugin.Command(_text);
         }
 
         /// <summary>

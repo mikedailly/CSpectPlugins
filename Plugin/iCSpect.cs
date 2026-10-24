@@ -574,6 +574,18 @@ namespace Plugin
 
         // ------------------------------------------------------------
         /// <summary>
+        ///     Run a debugger command line, exactly as typed into CSpect's own debugger
+        ///     (BR, WRITE, READ, PWRITE, INPORT, OUTPORT, PUSH, POP, POKE, OUT, NEXTREG, SET, CLR, LOG,
+        ///     SAVE, LOAD, TONE, NEXTBRK, ROM, REWIND, M, G, and register assignments such as "HL $4000").
+        ///     Call on the emulator thread (from Tick).
+        /// </summary>
+        /// <param name="_command">The command line</param>
+        /// <returns>The message the command gave (an error, or "Test Tone ON" etc), or null if it said nothing</returns>
+        // ------------------------------------------------------------
+        string DebugCommand(string _command);
+
+        // ------------------------------------------------------------
+        /// <summary>
         ///     Hex string to Int64 - will stop on an illegal character
         /// </summary>
         /// <param name="_hex">String to convert ($0000, 0x0000 or just 00000)</param>
