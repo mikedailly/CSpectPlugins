@@ -380,6 +380,7 @@ namespace Monitor
             "G <address>             Goto address in disassembly window",
             "G <bank>:<offset>       Goto address in physical memory using bank/offset",
             "WATCH <where>[,b|w|l|t[,count]]  Add a watch to the watch tab in use (label, address, bank:offset or register pair)",
+            "                        no size is bytes: $1234,10 = 10 bytes",
             "                        <where> can be a calculation: $1234+hl+(a*4)  ix+label  (+ - * / % & | ^ << >>)",
             "BR <address>            Toggle Breakpoint",
             "BR <bank>:<offset>      Toggle Physical address breakpoint",

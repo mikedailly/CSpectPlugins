@@ -701,7 +701,7 @@ namespace Monitor
         //  Watches: "where[,size[,count]]"
         //      where   $1234, 4660, bank:offset, a label (+/- offset), or a register pair (HL, IX+2, HL'...) -
         //              the memory it points to
-        //      size    b byte (default), w 16 bit, l 32 bit, t text
+        //      size    b byte (default - "where,count" is bytes too), w 16 bit, l 32 bit, t text
         //      count   how many (default 1); for text, characters - 0 (the default) = up to a 0 byte
         // ******************************************************************************************
         /// <summary>Each watch tab's watches</summary>
@@ -736,6 +736,9 @@ namespace Monitor
             if (parts[0].Length == 0) { r.Value = "Expected an address, label or register"; return r; }
             if (parts.Length > 3) { r.Value = "Too many parts - where,size,count"; return r; }
             char size = 'b';
+            // "where,count" - no size given: bytes
+            int n2;
+            if (parts.Length == 2 && MonitorAddress.TryNumber(parts[1], out n2)) parts = new[] { parts[0], "b", parts[1] };
             if (parts.Length > 1 && parts[1].Length > 0)
             {
                 string z = parts[1].ToLowerInvariant();
