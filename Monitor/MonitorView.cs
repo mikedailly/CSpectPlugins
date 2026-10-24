@@ -1191,6 +1191,12 @@ namespace Monitor
         ///     Draw an instruction: mnemonic and registers white, labels light blue, $hex values yellow
         /// </summary>
         // ****************************************************************************************
+        /// <summary>%01010101 - a binary number (a '%' followed by 0s and 1s)</summary>
+        static bool IsBinaryStart(string _text, int _i)
+        {
+            return _text[_i] == '%' && _i + 1 < _text.Length && (_text[_i + 1] == '0' || _text[_i + 1] == '1');
+        }
+
         static void DrawInstruction(string _text)
         {
             var parts = new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<string, Vector4>>();
@@ -1208,6 +1214,12 @@ namespace Monitor
                     while (i < n && Uri.IsHexDigit(_text[i])) i++;
                     col = ColHex;
                 }
+                else if (IsBinaryStart(_text, i))
+                {
+                    i++;
+                    while (i < n && (_text[i] == '0' || _text[i] == '1')) i++;
+                    col = ColHex;
+                }
                 else if (char.IsLetter(c) || c == '_' || c == '.' || c == '@' || c == '!')
                 {
                     while (i < n && (char.IsLetterOrDigit(_text[i]) || _text[i] == '_' || _text[i] == '.' || _text[i] == '@' || _text[i] == '!')) i++;
@@ -1219,7 +1231,8 @@ namespace Monitor
                 else
                 {
                     while (i < n && !(char.IsLetter(_text[i]) || _text[i] == '_' || _text[i] == '.' || _text[i] == '@' || _text[i] == '!' ||
-                                      (_text[i] == '$' && i + 1 < n && Uri.IsHexDigit(_text[i + 1])))) i++;
+                                      (_text[i] == '$' && i + 1 < n && Uri.IsHexDigit(_text[i + 1])) || IsBinaryStart(_text, i))) i++;
+                    if (i == start) i++;
                 }
                 // merge runs of the same colour
                 if (parts.Count > 0 && parts[parts.Count - 1].Value == col)
