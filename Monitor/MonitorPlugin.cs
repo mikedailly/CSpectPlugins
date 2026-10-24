@@ -704,24 +704,28 @@ namespace Monitor
         //      size    b byte (default), w 16 bit, l 32 bit, t text
         //      count   how many (default 1); for text, characters - 0 (the default) = up to a 0 byte
         // ******************************************************************************************
-        string[] WatchExprs = new string[0];
+        /// <summary>Each watch tab's watches</summary>
+        readonly string[][] WatchExprs = { new string[0], new string[0], new string[0], new string[0] };
         const int MAX_WATCH = 256;
 
         /// <summary>The watches to work out every frame (any thread)</summary>
-        public void SetWatches(string[] _watches) { lock (Gate) WatchExprs = (string[])_watches.Clone(); }
+        public void SetWatches(int _set, string[] _watches) { lock (Gate) WatchExprs[_set] = (string[])_watches.Clone(); }
 
         void CaptureWatches(MonitorSnapshot s, bool _stopped)
         {
-            string[] w;
-            lock (Gate) w = WatchExprs;
-            var results = new WatchResult[w.Length];
             Z80Regs live = _stopped ? s.Regs : null;         // running: registers read live, once, only if a watch uses them
-            for (int i = 0; i < w.Length; i++)
+            for (int set = 0; set < WatchExprs.Length; set++)
             {
-                try { results[i] = EvalWatch(w[i], ref live); }
-                catch (Exception ex) { results[i] = new WatchResult { Expr = w[i], Value = ex.Message, Error = true }; }
+                string[] w;
+                lock (Gate) w = WatchExprs[set];
+                var results = new WatchResult[w.Length];
+                for (int i = 0; i < w.Length; i++)
+                {
+                    try { results[i] = EvalWatch(w[i], ref live); }
+                    catch (Exception ex) { results[i] = new WatchResult { Expr = w[i], Value = ex.Message, Error = true }; }
+                }
+                s.WatchSets[set] = results;
             }
-            s.Watches = results;
         }
 
         WatchResult EvalWatch(string _expr, ref Z80Regs _regs)

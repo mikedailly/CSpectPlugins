@@ -141,7 +141,7 @@ namespace Monitor
             if (s != null && s.StopCount != ShownStopCount)
             {
                 // the CPU moved on: remember what it looked like before, for highlighting changes
-                if (Shown != null) { PrevRegs = Shown.Regs; PrevMemory = Shown.Memory; PrevPhys = Shown.PhysMemory; PrevPhysStart = Shown.PhysStart; PrevWatches = Shown.Watches; }
+                if (Shown != null) { PrevRegs = Shown.Regs; PrevMemory = Shown.Memory; PrevPhys = Shown.PhysMemory; PrevPhysStart = Shown.PhysStart; for (int w = 0; w < WATCH_VIEWS; w++) WatchViews[w].Prev = Shown.WatchSets[w]; }
                 ShownStopCount = s.StopCount;
             }
             Shown = s;
@@ -197,8 +197,11 @@ namespace Monitor
                     }
                 }
                 ImGui.Separator();
-                bool w = WatchEnabled;
-                if (ImGui.MenuItem("Watch", null, ref w)) { WatchEnabled = w; if (w) SelectWatch = true; }
+                for (int i = 0; i < WATCH_VIEWS; i++)
+                {
+                    bool w = WatchViews[i].Enabled;
+                    if (ImGui.MenuItem("Watch " + (i + 1), null, ref w)) { WatchViews[i].Enabled = w; if (w) SelectWatch = i; SaveWatches(); }
+                }
                 ImGui.EndMenu();
             }
             ImGui.EndMenuBar();
@@ -376,7 +379,7 @@ namespace Monitor
             "M <bank>:<offset>       Set memory window into physical memory using bank/offset",
             "G <address>             Goto address in disassembly window",
             "G <bank>:<offset>       Goto address in physical memory using bank/offset",
-            "WATCH <where>[,b|w|l|t[,count]]  Add a watch (label, address, bank:offset or register pair)",
+            "WATCH <where>[,b|w|l|t[,count]]  Add a watch to the watch tab in use (label, address, bank:offset or register pair)",
             "                        <where> can be a calculation: $1234+hl+(a*4)  ix+label  (+ - * / % & | ^ << >>)",
             "BR <address>            Toggle Breakpoint",
             "BR <bank>:<offset>      Toggle Physical address breakpoint",
@@ -602,8 +605,13 @@ namespace Monitor
             ShowCommandHelp = false;
             if (word == "WATCH")
             {
-                if (arg.Length == 0) { WatchEnabled = true; SelectWatch = true; }
-                else AddWatch(arg);
+                if (!WatchViews[ActiveWatch].Enabled)
+                {
+                    int open = Array.FindIndex(WatchViews, v => v.Enabled);
+                    ActiveWatch = open >= 0 ? open : 0;
+                }
+                if (arg.Length == 0) { WatchViews[ActiveWatch].Enabled = true; SelectWatch = ActiveWatch; SaveWatches(); }
+                else AddWatch(ActiveWatch, arg);
                 return;
             }
             if (word == "M" || word == "G")
@@ -1384,21 +1392,24 @@ namespace Monitor
                     }
                     if (!open) m.Enabled = false;       // closed with its x (the Memory menu brings it back)
                 }
-                if (WatchEnabled)
+                for (int i = 0; i < WATCH_VIEWS; i++)
                 {
+                    WatchView wv = WatchViews[i];
+                    if (!wv.Enabled) continue;
                     any = true;
                     bool open = true;
-                    ImGuiTabItemFlags tf = SelectWatch ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None;
-                    if (ImGui.BeginTabItem("Watch##watch", ref open, tf))
+                    ImGuiTabItemFlags tf = SelectWatch == i ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None;
+                    if (ImGui.BeginTabItem("Watch " + (i + 1) + "##watch" + i, ref open, tf))
                     {
+                        ActiveWatch = i;
                         Plugin.SetPhysicalWindow(0, 0);     // no memory pane on show
-                        DrawWatches(s);
+                        DrawWatches(s, i);
                         ImGui.EndTabItem();
                     }
-                    if (!open) WatchEnabled = false;
+                    if (!open) { wv.Enabled = false; SaveWatches(); }
                 }
                 SelectMem = -1;
-                SelectWatch = false;
+                SelectWatch = -1;
                 ImGui.EndTabBar();
             }
             if (!any)
@@ -1412,19 +1423,28 @@ namespace Monitor
         //  Watch window: "where[,size[,count]]" - label, address, bank:offset or register pair (what it points
         //  to), then b/w/l/t and how many. Worked out every frame, so it follows the program as it runs.
         // ****************************************************************************************
-        internal bool WatchEnabled = true;
-        bool SelectWatch;
-        internal readonly List<string> Watches = new List<string>();
-        string WatchInput = "";
-        int WatchEdit = -1;
-        string WatchEditText = "";
-        bool WatchEditFocus;
-        /// <summary>The watch values when the CPU last stopped (to show what the last step changed)</summary>
-        WatchResult[] PrevWatches;
-
-        void WatchesChanged()
+        /// <summary>One watch tab</summary>
+        internal sealed class WatchView
         {
-            Plugin.SetWatches(Watches.ToArray());
+            public bool Enabled;
+            public readonly List<string> Watches = new List<string>();
+            public string Input = "";
+            public int Edit = -1;
+            public string EditText = "";
+            public bool EditFocus;
+            /// <summary>The values when the CPU last stopped (to show what the last step changed)</summary>
+            public WatchResult[] Prev;
+        }
+        internal const int WATCH_VIEWS = 4;
+        internal readonly WatchView[] WatchViews = { new WatchView { Enabled = true }, new WatchView(), new WatchView(), new WatchView() };
+        /// <summary>The watch tab last shown (WATCH adds to it)</summary>
+        internal int ActiveWatch;
+        /// <summary>Bring this watch tab to the front next frame (-1 = none)</summary>
+        int SelectWatch = -1;
+
+        void WatchesChanged(int _set)
+        {
+            Plugin.SetWatches(_set, WatchViews[_set].Watches.ToArray());
             SaveWatches();
         }
 
@@ -1440,12 +1460,26 @@ namespace Monitor
             try
             {
                 if (!System.IO.File.Exists(WatchFile)) return;
+                // "[Watch n]" starts a tab's watches (a file without them is all Watch 1); a tab listed is open
+                int set = 0;
+                bool sections = false;
                 foreach (string line in System.IO.File.ReadAllLines(WatchFile))
                 {
                     string w = line.Trim();
-                    if (w.Length > 0 && !w.StartsWith(";")) Watches.Add(w);
+                    if (w.Length == 0 || w.StartsWith(";")) continue;
+                    int n;
+                    if (w.StartsWith("[") && w.EndsWith("]") && w.Length > 8 && w.Substring(1, 6).Equals("Watch ", StringComparison.OrdinalIgnoreCase) &&
+                        int.TryParse(w.Substring(7, w.Length - 8), out n) && n >= 1 && n <= WATCH_VIEWS)
+                    {
+                        if (!sections) foreach (WatchView v in WatchViews) v.Enabled = false;     // the file says which are open
+                        sections = true;
+                        set = n - 1;
+                        WatchViews[set].Enabled = true;
+                        continue;
+                    }
+                    WatchViews[set].Watches.Add(w);
                 }
-                Plugin.SetWatches(Watches.ToArray());
+                for (int i = 0; i < WATCH_VIEWS; i++) Plugin.SetWatches(i, WatchViews[i].Watches.ToArray());
             }
             catch (Exception ex) { Console.WriteLine(" Monitor: couldn't read " + WatchFile + ": " + ex.Message); }
         }
@@ -1454,30 +1488,38 @@ namespace Monitor
         {
             try
             {
-                var lines = new List<string> { "; CSpect Monitor watches - where[,size[,count]], one per line" };
-                lines.AddRange(Watches);
+                var lines = new List<string> { "; CSpect Monitor watches - where[,size[,count]], one per line, under the tab they're in" };
+                for (int i = 0; i < WATCH_VIEWS; i++)
+                {
+                    if (!WatchViews[i].Enabled) continue;          // closed tabs aren't kept
+                    lines.Add("[Watch " + (i + 1) + "]");
+                    lines.AddRange(WatchViews[i].Watches);
+                }
                 System.IO.File.WriteAllLines(WatchFile, lines.ToArray());
             }
             catch (Exception ex) { ShowCommandMessage("Couldn't save the watches to " + WatchFile + ": " + ex.Message, true); }
         }
 
-        /// <summary>Add a watch (the command line's WATCH, or the add box)</summary>
-        internal void AddWatch(string _expr)
+        /// <summary>Add a watch to a watch tab (the command line's WATCH, or the add box)</summary>
+        internal void AddWatch(int _set, string _expr)
         {
             _expr = (_expr ?? "").Trim();
             if (_expr.Length == 0) return;
-            Watches.Add(_expr);
-            WatchesChanged();
-            WatchEnabled = true;
-            SelectWatch = true;
+            WatchView wv = WatchViews[_set];
+            wv.Watches.Add(_expr);
+            wv.Enabled = true;
+            SelectWatch = _set;
+            WatchesChanged(_set);
         }
 
-        void DrawWatches(MonitorSnapshot s)
+        void DrawWatches(MonitorSnapshot s, int _set)
         {
+            WatchView wv = WatchViews[_set];
+            WatchResult[] res = s.WatchSets[_set] ?? new WatchResult[0];
             float addH = ImGui.GetFrameHeightWithSpacing();
             if (ImGui.BeginChild("##watchrows", new Vector2(0, -addH), ImGuiChildFlags.None, WheelFlags()))
             {
-                if (Watches.Count == 0) TextDim("No watches yet - add one below, e.g.  score,w   hl,b,8   ix+offset,w   10:$0000,t,0");
+                if (wv.Watches.Count == 0) TextDim("No watches yet - add one below, e.g.  score,w   hl,b,8   ix+offset,w   10:$0000,t,0");
                 else if (ImGui.BeginTable("##watches", 4, ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerV | ImGuiTableFlags.Resizable))
                 {
                     ImGui.TableSetupColumn("Watch", ImGuiTableColumnFlags.WidthFixed, S(170));
@@ -1486,37 +1528,37 @@ namespace Monitor
                     ImGui.TableSetupColumn("##del", ImGuiTableColumnFlags.WidthFixed, ImGui.GetFrameHeight());
                     ImGui.TableHeadersRow();
                     int remove = -1;
-                    for (int i = 0; i < Watches.Count; i++)
+                    for (int i = 0; i < wv.Watches.Count; i++)
                     {
                         // the snapshot is a frame behind an edit: only use its result if it's for this watch
-                        WatchResult r = i < s.Watches.Length && s.Watches[i].Expr == Watches[i] ? s.Watches[i] : null;
-                        WatchResult was = PrevWatches != null && i < PrevWatches.Length && PrevWatches[i].Expr == Watches[i] ? PrevWatches[i] : null;
+                        WatchResult r = i < res.Length && res[i].Expr == wv.Watches[i] ? res[i] : null;
+                        WatchResult was = wv.Prev != null && i < wv.Prev.Length && wv.Prev[i].Expr == wv.Watches[i] ? wv.Prev[i] : null;
                         ImGui.TableNextRow();
                         ImGui.TableSetColumnIndex(0);
-                        if (WatchEdit == i)
+                        if (wv.Edit == i)
                         {
-                            if (WatchEditFocus) { ImGui.SetKeyboardFocusHere(); WatchEditFocus = false; }
+                            if (wv.EditFocus) { ImGui.SetKeyboardFocusHere(); wv.EditFocus = false; }
                             ImGui.SetNextItemWidth(-1);
-                            if (ImGui.InputText("##wedit", ref WatchEditText, 128, ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.AutoSelectAll))
+                            if (ImGui.InputText("##wedit", ref wv.EditText, 128, ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.AutoSelectAll))
                             {
-                                if (WatchEditText.Trim().Length > 0) Watches[i] = WatchEditText.Trim(); else remove = i;
-                                WatchEdit = -1;
-                                WatchesChanged();
+                                if (wv.EditText.Trim().Length > 0) wv.Watches[i] = wv.EditText.Trim(); else remove = i;
+                                wv.Edit = -1;
+                                WatchesChanged(_set);
                             }
-                            else if (ImGui.IsItemDeactivated()) WatchEdit = -1;
+                            else if (ImGui.IsItemDeactivated()) wv.Edit = -1;
                         }
                         else
                         {
-                            ImGui.Selectable(Watches[i] + "##w" + i, false, ImGuiSelectableFlags.SpanAllColumns | ImGuiSelectableFlags.AllowOverlap | ImGuiSelectableFlags.AllowDoubleClick);
-                            if (ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)) { WatchEdit = i; WatchEditText = Watches[i]; WatchEditFocus = true; }
+                            ImGui.Selectable(wv.Watches[i] + "##w" + i, false, ImGuiSelectableFlags.SpanAllColumns | ImGuiSelectableFlags.AllowOverlap | ImGuiSelectableFlags.AllowDoubleClick);
+                            if (ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)) { wv.Edit = i; wv.EditText = wv.Watches[i]; wv.EditFocus = true; }
                             if (ImGui.BeginPopupContextItem("##wctx" + i))
                             {
-                                if (ImGui.MenuItem("Edit")) { WatchEdit = i; WatchEditText = Watches[i]; WatchEditFocus = true; }
+                                if (ImGui.MenuItem("Edit")) { wv.Edit = i; wv.EditText = wv.Watches[i]; wv.EditFocus = true; }
                                 if (ImGui.MenuItem("Remove")) remove = i;
                                 if (ImGui.MenuItem("Show in memory", null, false, r != null && r.Address >= 0)) ShowInMemory(r.Address, r.Physical);
                                 ImGui.Separator();
-                                if (ImGui.MenuItem("Move up", null, false, i > 0)) { Watches.Reverse(i - 1, 2); WatchesChanged(); }
-                                if (ImGui.MenuItem("Move down", null, false, i < Watches.Count - 1)) { Watches.Reverse(i, 2); WatchesChanged(); }
+                                if (ImGui.MenuItem("Move up", null, false, i > 0)) { wv.Watches.Reverse(i - 1, 2); WatchesChanged(_set); }
+                                if (ImGui.MenuItem("Move down", null, false, i < wv.Watches.Count - 1)) { wv.Watches.Reverse(i, 2); WatchesChanged(_set); }
                                 ImGui.EndPopup();
                             }
                             if (ImGui.IsItemHovered() && r != null && r.Tip != null && !ImGui.IsPopupOpen("", ImGuiPopupFlags.AnyPopupId)) Tip(r.Tip);
@@ -1532,17 +1574,17 @@ namespace Monitor
                         if (ImGui.IsItemHovered()) Tip("Remove this watch");
                     }
                     ImGui.EndTable();
-                    if (remove >= 0) { Watches.RemoveAt(remove); WatchEdit = -1; WatchesChanged(); }
+                    if (remove >= 0) { wv.Watches.RemoveAt(remove); wv.Edit = -1; WatchesChanged(_set); }
                 }
             }
             ImGui.EndChild();
 
             ImGui.SetNextItemWidth(-1);
             if (ImGui.InputTextWithHint("##addwatch", "Add a watch: label,b,3   hl,w,4   $1234+hl+(a*4),b,10   $00:$1234,t,0   (b w l t, count; t,0 = to a 0 byte)",
-                                        ref WatchInput, 128, ImGuiInputTextFlags.EnterReturnsTrue))
+                                        ref wv.Input, 128, ImGuiInputTextFlags.EnterReturnsTrue))
             {
-                AddWatch(WatchInput);
-                WatchInput = "";
+                AddWatch(_set, wv.Input);
+                wv.Input = "";
                 ImGui.SetKeyboardFocusHere(-1);         // ready for the next one
             }
         }

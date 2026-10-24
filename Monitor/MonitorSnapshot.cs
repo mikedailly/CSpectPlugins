@@ -93,8 +93,8 @@ namespace Monitor
         /// <summary>The source line PC is on (null if PC's code has no source line)</summary>
         public SourceLocation PCSource;
 
-        /// <summary>The watch window's watches, in order</summary>
-        public WatchResult[] Watches = new WatchResult[0];
+        /// <summary>Each watch tab's watches, in order</summary>
+        public WatchResult[][] WatchSets = { new WatchResult[0], new WatchResult[0], new WatchResult[0], new WatchResult[0] };
 
         /// <summary>Physical address -> 64k address, if its 8K bank is paged in right now (else -1)</summary>
         public int ToLogical(int _physical)
