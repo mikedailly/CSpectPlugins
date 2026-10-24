@@ -545,7 +545,7 @@ namespace Plugin
 
         // ------------------------------------------------------------
         /// <summary>
-        ///     The text of a source file (tabs expanded), or null for a bad index
+        ///     The text of a source file, as it is in the file (tabs are left in - expand them as you draw), or null for a bad index
         /// </summary>
         /// <param name="_file">File index (as GetSourceFiles)</param>
         // ------------------------------------------------------------
