@@ -592,7 +592,8 @@ namespace Monitor
                 physStart = PhysWantStart; physCount = PhysWantCount;
             }
             int pc = s.Regs.PC;
-            if (follow) start = FollowPC(pc, lines, visible);
+            // following PC: only while stopped - running, the view stays where it was (the first frame shows PC)
+            if (follow) start = (_stopped || LastStart < 0) ? FollowPC(pc, lines, visible) : LastStart;
             if (scroll > 0) for (int i = 0; i < scroll; i++) start = Wrap(start + Length(start, phys), phys);
             else if (scroll < 0) start = BackLines(start, -scroll, phys);
             if (!follow) lock (Gate) { if (!DisasmFollow) DisasmStart = start; }
@@ -679,7 +680,7 @@ namespace Monitor
                 SourceLocation g = SourceAt(go >= 0 ? go : s.ToPhysical(-2 - go));
                 if (g != null) { follow = false; file = g.File; top = Math.Max(1, g.Line - 3); }
             }
-            else if (follow && s.PCSource != null)
+            else if (follow && s.PCSource != null && (s.Stopped || file < 0))     // running: stay put
             {
                 int line = s.PCSource.Line;
                 if (s.PCSource.File != file || line < top || line > top + visible - 1) { file = s.PCSource.File; top = Math.Max(1, line - 3); }
