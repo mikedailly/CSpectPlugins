@@ -988,7 +988,7 @@ namespace Monitor
                 }
 
                 ImGui.TableSetColumnIndex(2);
-                DrawSourceText(row.Text);
+                DrawSourceText(row.Text, row.Labels);
                 if (ImGui.GetItemRectMax().Y <= bottom) fitted++;
             }
             ImGui.EndTable();
@@ -997,19 +997,26 @@ namespace Monitor
         }
 
         /// <summary>A source line: code, then any ';' comment dimmed (a ';' inside quotes isn't a comment)</summary>
-        static void DrawSourceText(string _text)
+        static void DrawSourceText(string _text, int[] _labels)
         {
-            int c = -1; char quote = '\0';
-            for (int i = 0; i < _text.Length; i++)
+            if (_text.Length == 0) { ImGui.TextUnformatted(" "); return; }
+            int c = SourceText.CommentStart(_text);
+            int code = c < 0 ? _text.Length : c;
+            // the code, with words that are labels in the label colour
+            int at = 0;
+            bool first = true;
+            for (int i = 0; i + 1 < _labels.Length; i += 2)
             {
-                char ch = _text[i];
-                if (quote != '\0') { if (ch == quote) quote = '\0'; }
-                else if (ch == '"' || ch == '\'') { if (!(ch == '\'' && i > 0 && char.IsLetterOrDigit(_text[i - 1]))) quote = ch; }   // af' isn't a quote
-                else if (ch == ';') { c = i; break; }
+                int start = _labels[i], len = _labels[i + 1];
+                if (start < at || start + len > code) continue;
+                if (start > at) { if (!first) ImGui.SameLine(0, 0); ImGui.TextUnformatted(_text.Substring(at, start - at)); first = false; }
+                if (!first) ImGui.SameLine(0, 0);
+                TextCol(ColLabel, _text.Substring(start, len));
+                first = false;
+                at = start + len;
             }
-            if (c < 0) { ImGui.TextUnformatted(_text.Length == 0 ? " " : _text); return; }
-            if (c > 0) { ImGui.TextUnformatted(_text.Substring(0, c)); ImGui.SameLine(0, 0); }
-            TextCol(ColComment, _text.Substring(c));
+            if (code > at) { if (!first) ImGui.SameLine(0, 0); ImGui.TextUnformatted(_text.Substring(at, code - at)); first = false; }
+            if (c >= 0) { if (!first) ImGui.SameLine(0, 0); TextCol(ColComment, _text.Substring(c)); }
         }
 
         void DrawDisassembly(MonitorSnapshot s)

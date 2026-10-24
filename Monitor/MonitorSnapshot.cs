@@ -4,6 +4,7 @@
 // ********************************************************************************************************************************************
 using Plugin;
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 
 namespace Monitor
@@ -50,6 +51,8 @@ namespace Monitor
         public bool Breakpoint;
         /// <summary>...and is it only a physical one? (drawn darker)</summary>
         public bool PhysicalBreakpoint;
+        /// <summary>Words in the code that are labels, as (start, length) pairs</summary>
+        public int[] Labels = new int[0];
     }
 
     // *********************************************************************************************************
@@ -172,6 +175,60 @@ namespace Monitor
         public bool Physical;
         /// <summary>null if it worked, else why not</summary>
         public string Error;
+    }
+
+    // *********************************************************************************************************
+    /// <summary>
+    ///     Picking a source line apart: where its ';' comment starts, and its words (for label colouring)
+    /// </summary>
+    // *********************************************************************************************************
+    public static class SourceText
+    {
+        /// <summary>Where the ';' comment starts (a ';' in quotes doesn't count), or -1</summary>
+        public static int CommentStart(string _text)
+        {
+            char quote = '\0';
+            for (int i = 0; i < _text.Length; i++)
+            {
+                char ch = _text[i];
+                if (quote != '\0') { if (ch == quote) quote = '\0'; }
+                else if (IsQuote(_text, i)) quote = ch;
+                else if (ch == ';') return i;
+            }
+            return -1;
+        }
+
+        /// <summary>A quote that starts a string - not the ' of AF' (after a letter or digit)</summary>
+        static bool IsQuote(string _text, int _i)
+        {
+            char ch = _text[_i];
+            return ch == '"' || (ch == '\'' && !(_i > 0 && char.IsLetterOrDigit(_text[_i - 1])));
+        }
+
+        public static bool IsWordChar(char _c) { return char.IsLetterOrDigit(_c) || _c == '_' || _c == '.' || _c == '@' || _c == '!'; }
+
+        /// <summary>
+        ///     The words before _end that could be labels, as (start, length) - not in quotes, not numbers
+        ///     (a digit first, or after $ % #). Anything that isn't a word character splits words.
+        /// </summary>
+        public static List<int> Words(string _text, int _end)
+        {
+            var words = new List<int>();
+            char quote = '\0';
+            int i = 0;
+            while (i < _end)
+            {
+                char ch = _text[i];
+                if (quote != '\0') { if (ch == quote) quote = '\0'; i++; continue; }
+                if (IsQuote(_text, i)) { quote = ch; i++; continue; }
+                if (!IsWordChar(ch)) { i++; continue; }
+                int start = i;
+                while (i < _end && IsWordChar(_text[i])) i++;
+                bool number = char.IsDigit(_text[start]) || (start > 0 && (_text[start - 1] == '$' || _text[start - 1] == '%' || _text[start - 1] == '#'));
+                if (!number) { words.Add(start); words.Add(i - start); }
+            }
+            return words;
+        }
     }
 
     // *********************************************************************************************************

@@ -227,8 +227,32 @@ namespace Monitor
         public void SetSourceLines(int _lines) { lock (Gate) SrcLines = Math.Max(1, Math.Min(200, _lines)); }
         public void SetSourceVisible(int _count) { lock (Gate) SrcVisible = Math.Max(0, _count); }
 
+        /// <summary>Is this word a label? (case insensitive, remembered - cleared when the CPU stops, in case symbols reload)</summary>
+        readonly Dictionary<string, bool> IsLabelCache = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>The words in a source line's code (not its comment) that are labels, as (start, length) pairs</summary>
+        int[] LabelWords(string _text)
+        {
+            int end = SourceText.CommentStart(_text);
+            List<int> words = SourceText.Words(_text, end < 0 ? _text.Length : end);
+            var found = new List<int>();
+            for (int w = 0; w < words.Count; w += 2)
+            {
+                string word = _text.Substring(words[w], words[w + 1]);
+                bool label;
+                if (!IsLabelCache.TryGetValue(word, out label))
+                {
+                    try { label = CSpect.FindSymbol(word) != null; } catch (Exception) { label = false; }
+                    IsLabelCache[word] = label;
+                }
+                if (label) { found.Add(words[w]); found.Add(words[w + 1]); }
+            }
+            return found.ToArray();
+        }
+
         void ReadSourceFiles()
         {
+            IsLabelCache.Clear();
             try { SourceFileNames = CSpect.GetSourceFiles().ToArray(); }
             catch (Exception) { SourceFileNames = new string[0]; }         // older CSpect
         }
@@ -981,6 +1005,7 @@ namespace Monitor
             for (int i = 0; i < lines && top + i <= text.Length; i++)
             {
                 var row = new SourceRow { Line = top + i, Text = text[top + i - 1] ?? "" };
+                row.Labels = LabelWords(row.Text);
                 try { row.Address = CSpect.GetSourceAddress(file, row.Line); } catch (Exception) { row.Address = -1; }
                 if (row.Address >= 0)
                 {
