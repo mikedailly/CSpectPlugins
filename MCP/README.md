@@ -8,17 +8,23 @@ and debug it in a loop.
 
 ## Setup
 
-Put `MCP.dll` next to `CSpect.exe` with the other plugins. When CSpect starts, it prints:
+Put `MCP.dll` next to `CSpect.exe` with the other plugins. The server is off unless you start
+CSpect with `-mcp`:
+
+```
+CSpect.exe -mcp -zxnext -mmc=.\ game.nex
+```
+
+When it starts, CSpect prints:
 
 ```
  MCP server on http://127.0.0.1:8765/mcp
 ```
 
+* **Port:** use `-mcp=<port>` for a different one, e.g. `-mcp=9000`.
+
 The server only listens on the loopback address, so nothing outside your machine can reach it.
 It also refuses requests from web pages that aren't served locally.
-
-* **Port:** set the `CSPECT_MCP_PORT` environment variable to change it.
-* **Turning it off:** set `CSPECT_MCP_PORT=off`.
 
 ### Claude Code
 

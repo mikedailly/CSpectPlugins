@@ -5,8 +5,8 @@
 //
 //      Released under the GNU 3 license - please see license file for more details
 //
-//      Listens on http://127.0.0.1:8765/mcp (set CSPECT_MCP_PORT to change the port), speaking MCP's Streamable
-//      HTTP transport. Claude Code:  claude mcp add --transport http cspect http://127.0.0.1:8765/mcp
+//      Off unless CSpect is started with -mcp. Then it listens on http://127.0.0.1:8765/mcp (-mcp=<port> for
+//      another port), speaking MCP's Streamable HTTP transport. Claude Code:  claude mcp add --transport http cspect http://127.0.0.1:8765/mcp
 //
 //      Threading: requests arrive on socket threads, but CSpect's CPU/memory must only be touched on the emulator
 //      thread. So every request is queued as a job and run in Tick() - which CSpect calls every frame, running or
@@ -77,18 +77,11 @@ namespace MCP
         public List<sIO> Init(iCSpect _CSpect)
         {
             CSpect = _CSpect;
-            int port = DEFAULT_PORT;
-            string env = Environment.GetEnvironmentVariable("CSPECT_MCP_PORT");
-            if (!string.IsNullOrEmpty(env))
-            {
-                if (env.Trim() == "0" || env.Trim().ToLowerInvariant() == "off")
-                {
-                    Console.WriteLine(" MCP server disabled (CSPECT_MCP_PORT=" + env + ")");
-                    return new List<sIO>();
-                }
-                int.TryParse(env, out port);
-                if (port <= 0 || port > 65535) port = DEFAULT_PORT;
-            }
+
+            // only with -mcp (or -mcp=<port>) on CSpect's command line
+            int port = CommandLinePort();
+            if (port <= 0) return new List<sIO>();
+            Enabled = true;
 
             // can this CSpect hold keys for us? (releasing them all is harmless)
             ReleaseKeys();
@@ -108,6 +101,33 @@ namespace MCP
             return new List<sIO>();
         }
 
+        /// <summary>Is the server on? (-mcp)</summary>
+        bool Enabled;
+
+        // *********************************************************************************************************
+        /// <summary>
+        ///     -mcp = the default port, -mcp=&lt;port&gt; = that port. 0 = not on the command line (server off).
+        /// </summary>
+        // *********************************************************************************************************
+        static int CommandLinePort()
+        {
+            string[] args;
+            try { args = Environment.GetCommandLineArgs(); }
+            catch (Exception) { return 0; }
+            foreach (string a in args)
+            {
+                string arg = a.Trim().ToLowerInvariant();
+                if (arg == "-mcp") return DEFAULT_PORT;
+                if (arg.StartsWith("-mcp="))
+                {
+                    if (int.TryParse(arg.Substring(5), out int p) && p > 0 && p <= 65535) return p;
+                    Console.WriteLine(" MCP: bad port in " + a + " - using " + DEFAULT_PORT);
+                    return DEFAULT_PORT;
+                }
+            }
+            return 0;
+        }
+
         public bool KeyPressed(int _id) { return false; }
         public byte Read(eAccess _type, int _address, int _id, out bool _isvalid) { _isvalid = false; return 0; }
         public bool Write(eAccess _type, int _port, int _id, byte _value) { return false; }
@@ -115,6 +135,7 @@ namespace MCP
 
         public void Reset()
         {
+            if (!Enabled) return;
             // the machine was reset: let go of any keys we're holding
             lock (KeyLock) { KeySteps.Clear(); CurrentKey = null; }
         }
@@ -165,6 +186,7 @@ namespace MCP
         // ******************************************************************************************
         public void Tick()
         {
+            if (!Enabled) return;
             Job[] todo = null;
             lock (Gate)
             {
