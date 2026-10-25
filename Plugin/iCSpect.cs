@@ -586,6 +586,19 @@ namespace Plugin
 
         // ------------------------------------------------------------
         /// <summary>
+        ///     Hold Spectrum keys down, on top of the real keyboard. Keys stay held until the row is set back to $FF.
+        /// </summary>
+        /// <param name="_row">
+        ///     Keyboard half-row, by the address line that selects it:
+        ///     0 = A8 (CAPS,Z,X,C,V)  1 = A9 (A,S,D,F,G)  2 = A10 (Q,W,E,R,T)  3 = A11 (1,2,3,4,5)
+        ///     4 = A12 (0,9,8,7,6)    5 = A13 (P,O,I,U,Y)  6 = A14 (ENTER,L,K,J,H)  7 = A15 (SPACE,SYM,M,N,B)
+        /// </param>
+        /// <param name="_keys">Bits 0-4, active low (0 = held), in the order above. $FF = none held.</param>
+        // ------------------------------------------------------------
+        void SetKeyboardRow(int _row, int _keys);
+
+        // ------------------------------------------------------------
+        /// <summary>
         ///     Hex string to Int64 - will stop on an illegal character
         /// </summary>
         /// <param name="_hex">String to convert ($0000, 0x0000 or just 00000)</param>
