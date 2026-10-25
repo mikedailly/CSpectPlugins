@@ -52,7 +52,7 @@ launch stdio servers can go through a bridge such as
 | `step` / `step_over` / `step_back` | Single step, step over CALLs etc, and rewind |
 | `run_to` | Run to an address (temporary breakpoint), with a timeout |
 | `wait_for_stop` | Wait for a breakpoint to hit |
-| `set_breakpoint` / `clear_breakpoint` / `list_breakpoints` | Execute (64K or physical), read and write breakpoints |
+| `set_breakpoint` / `clear_breakpoint` / `list_breakpoints` | Execute (64K or physical), read and write breakpoints. The list includes port breakpoints too |
 | `evaluate` | Work out an expression, plus the symbol and source line at the result |
 | `find_symbols` | Search the map file's symbols |
 | `get_source` | Source lines around an address, or a file and line (needs a SNASM map with `[LINES]`) |
@@ -62,6 +62,7 @@ launch stdio servers can go through a bridge such as
 | `screenshot` | The display, border included, as a PNG (640x512, or 320x256) |
 | `press_keys` | Press Spectrum keys, e.g. `"CAPS+5 ENTER"`, `"SYM+P"`, `"BREAK"` |
 | `type_text` | Type text: letters, digits, space, newline, and the SYM symbols |
+| `reset_machine` | Hard reset (F3) or soft reset |
 | `load_nex` | Load and run a .nex file, or reload the current one |
 
 Addresses and values accept:
@@ -77,7 +78,9 @@ Addresses and values accept:
   the plugin's `Tick()`, between frames. Calls don't race the emulation. If CSpect is paused, or busy
   with a modal dialog, requests time out after 5 seconds.
 * **Keyboard:** keys go through `iCSpect.SetKeyboardRow`, which holds Spectrum keys on top of the
-  real keyboard. Older CSpects without it still work, except for `press_keys` and `type_text`.
-  Keys are only pressed while the CPU runs.
+  real keyboard. Keys are only pressed while the CPU runs.
+* **Older CSpects:** the plugin uses three newer iCSpect calls, `SetKeyboardRow`, `ListBreakpoints`
+  and `ResetMachine`. Without them it still works, except for key presses and resets, and
+  `list_breakpoints` can't show port breakpoints.
 * **Run to:** if `run_to` times out, the CPU keeps running. Its temporary breakpoint stays until the
   CPU next stops, then it's removed.

@@ -54,6 +54,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="BreakpointInfo.cs" />
     <Compile Include="Function.cs" />
     <Compile Include="iCSpect.cs" />
     <Compile Include="IFileIO.cs" />

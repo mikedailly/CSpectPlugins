@@ -155,7 +155,7 @@ namespace MCP
             {
                 Name = "set_breakpoint",
                 Description = "Set a breakpoint. execute (default) stops before running the instruction there; read/write stop on memory access (64K view only). " +
-                              "Port breakpoints: use debug_command with BR.",
+                              "Port breakpoints: use debug_command with BR (type 3 OutPort, 4 InPort).",
                 Handler = a => Breakpoint(a, true)
             }.Param("address", "string", ADDR, true)
              .EnumParam("type", new[] { "execute", "read", "write" }, "Breakpoint type (default execute)")
@@ -174,7 +174,7 @@ namespace MCP
             t.Add(new Tool
             {
                 Name = "list_breakpoints",
-                Description = "List the execute (64K and physical), read and write breakpoints.",
+                Description = "List the breakpoints: execute (64K and physical), memory read/write and port in/out.",
                 ReadOnly = true,
                 Handler = a => ToolResult.Text(P.Emu(() => ListBreakpoints(), 15000))
             });
@@ -306,6 +306,13 @@ namespace MCP
             }.Param("text", "string", "The text", true)
              .Param("hold_frames", "integer", "Frames to hold each key (default 3)")
              .Param("gap_frames", "integer", "Frames between keys (default 3)"));
+
+            t.Add(new Tool
+            {
+                Name = "reset_machine",
+                Description = "Reset the Next: hard (default, as F3) or soft (as NextReg $02). Returns the status.",
+                Handler = ResetMachine
+            }.Param("hard", "boolean", "true = hard reset (default), false = soft reset"));
 
             t.Add(new Tool
             {
@@ -703,6 +710,62 @@ namespace MCP
 
         static string ListBreakpoints()
         {
+            List<BreakpointInfo> list = null;
+            try { list = GetBreakpoints(); }
+            catch (MissingMethodException) { }              // an older CSpect: scan for them
+            if (list == null) return ScanBreakpoints();
+
+            List<string> exe = new List<string>(), rd = new List<string>(), wr = new List<string>(), ph = new List<string>(), pin = new List<string>(), pout = new List<string>();
+            foreach (BreakpointInfo b in list)
+            {
+                switch (b.Type)
+                {
+                    case eBreakpointType.Execute: exe.Add(Describe(b.Address)); break;
+                    case eBreakpointType.PhysicalExecute: ph.Add(DescribePhysical(b.Address)); break;
+                    case eBreakpointType.Read: rd.Add(Describe(b.Address)); break;
+                    case eBreakpointType.Write: wr.Add(Describe(b.Address)); break;
+                    case eBreakpointType.InPort: pin.Add(H4(b.Address)); break;
+                    case eBreakpointType.OutPort: pout.Add(H4(b.Address)); break;
+                }
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine("Execute (64K): " + (exe.Count == 0 ? "none" : string.Join(", ", exe)));
+            sb.AppendLine("Execute (physical): " + (ph.Count == 0 ? "none" : string.Join(", ", ph)));
+            sb.AppendLine("Read: " + (rd.Count == 0 ? "none" : string.Join(", ", rd)));
+            sb.AppendLine("Write: " + (wr.Count == 0 ? "none" : string.Join(", ", wr)));
+            sb.AppendLine("Port IN: " + (pin.Count == 0 ? "none" : string.Join(", ", pin)));
+            sb.Append("Port OUT: " + (pout.Count == 0 ? "none" : string.Join(", ", pout)));
+            return sb.ToString();
+        }
+
+        /// <summary>(Its own method: calling a missing interface method throws when this is JIT compiled)</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        static List<BreakpointInfo> GetBreakpoints() { return CS.ListBreakpoints(); }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        static void Reset(bool _hard) { CS.ResetMachine(_hard); }
+
+        static ToolResult ResetMachine(ToolArgs _a)
+        {
+            bool hard = _a.Bool("hard", true);
+            return P.Emu(() =>
+            {
+                try { Reset(hard); }
+                catch (MissingMethodException) { return ToolResult.Error("This CSpect can't reset from plugins - it needs a newer CSpect (iCSpect.ResetMachine)"); }
+                return ToolResult.Text((hard ? "Hard" : "Soft") + " reset\n" + Status());
+            });
+        }
+
+        static string DescribePhysical(int _a)
+        {
+            int l = ToLogical(_a);
+            string near = l >= 0 ? Near(l) : null;
+            return H6(_a) + " (bank8k " + H2(_a >> 13) + "+" + H4(_a & 0x1fff) + (l >= 0 ? ", now at " + H4(l) : "") + (near != null ? " " + near : "") + ")";
+        }
+
+        /// <summary>Older CSpects: look for breakpoints one address at a time (no port breakpoints)</summary>
+        static string ScanBreakpoints()
+        {
             StringBuilder sb = new StringBuilder();
             List<string> exe = new List<string>(), rd = new List<string>(), wr = new List<string>(), ph = new List<string>();
             for (int a = 0; a < 0x10000; a++)
@@ -715,18 +778,13 @@ namespace MCP
             const int PHYS_BP_SIZE = 4 * 1024 * 1024;
             for (int a = 0; a < PHYS_BP_SIZE; a++)
             {
-                if (CS.Debugger(eDebugCommand.GetPhysicalBreakpoint, a) != 0)
-                {
-                    int l = ToLogical(a);
-                    string near = l >= 0 ? Near(l) : null;
-                    ph.Add(H6(a) + " (bank8k " + H2(a >> 13) + "+" + H4(a & 0x1fff) + (l >= 0 ? ", now at " + H4(l) : "") + (near != null ? " " + near : "") + ")");
-                }
+                if (CS.Debugger(eDebugCommand.GetPhysicalBreakpoint, a) != 0) ph.Add(DescribePhysical(a));
             }
             sb.AppendLine("Execute (64K): " + (exe.Count == 0 ? "none" : string.Join(", ", exe)));
             sb.AppendLine("Execute (physical): " + (ph.Count == 0 ? "none" : string.Join(", ", ph)));
             sb.AppendLine("Read: " + (rd.Count == 0 ? "none" : string.Join(", ", rd)));
             sb.AppendLine("Write: " + (wr.Count == 0 ? "none" : string.Join(", ", wr)));
-            sb.Append("(Port breakpoints aren't listed - see debug_command)");
+            sb.Append("(this CSpect can't list port breakpoints)");
             return sb.ToString();
         }
 

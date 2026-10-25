@@ -599,6 +599,23 @@ namespace Plugin
 
         // ------------------------------------------------------------
         /// <summary>
+        ///     Every breakpoint that's set: execute (64K and physical), memory read/write and port in/out.
+        ///     Call on the emulator thread (from Tick).
+        /// </summary>
+        /// <returns>The breakpoints, in type then address order</returns>
+        // ------------------------------------------------------------
+        List<BreakpointInfo> ListBreakpoints();
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Reset the machine, as F3 (hard) or NextReg $02 (soft) would. Call on the emulator thread (from Tick).
+        /// </summary>
+        /// <param name="_hard">true for a hard reset (F3), false for a soft reset</param>
+        // ------------------------------------------------------------
+        void ResetMachine(bool _hard = true);
+
+        // ------------------------------------------------------------
+        /// <summary>
         ///     Hex string to Int64 - will stop on an illegal character
         /// </summary>
         /// <param name="_hex">String to convert ($0000, 0x0000 or just 00000)</param>
