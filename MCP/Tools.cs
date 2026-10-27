@@ -290,8 +290,10 @@ namespace MCP
             {
                 Name = "press_keys",
                 Description = "Press Spectrum keys, one after another. Each item is a key or keys held together joined by '+', separated by spaces or commas: " +
-                              "\"CAPS+5 ENTER\", \"SYM+P\", \"Q,Q,SPACE\". Keys: A-Z 0-9 ENTER SPACE CAPS SYM, plus BREAK DELETE LEFT RIGHT UP DOWN EDIT EXTEND GRAPHICS " +
-                              "CAPSLOCK TRUEVIDEO INVVIDEO. Plays while the CPU runs; waits until done.",
+                              "\"CAPS+5 ENTER\", \"SYM+P\", \"Q,Q,SPACE\". Keys: A-Z 0-9 ENTER SPACE CAPS SYM, plus the Next's extended keys UP DOWN LEFT RIGHT " +
+                              "DELETE EDIT BREAK INVVIDEO TRUEVIDEO GRAPHICS CAPSLOCK EXTEND SEMICOLON QUOTE COMMA PERIOD. Extended keys are pressed as the Next " +
+                              "keyboard does (seen in NR $B0/$B1, and as their CAPS/SYM combination unless NR $68 bit 4 is set); on an older CSpect they are sent " +
+                              "as the CAPS/SYM combination. Plays while the CPU runs; waits until done.",
                 Handler = PressKeys
             }.Param("keys", "string", "The keys", true)
              .Param("hold_frames", "integer", "Frames to hold each (default 3)")
@@ -950,10 +952,23 @@ namespace MCP
             { "CAPSSHIFT", "CAPS" }, { "CS", "CAPS" }, { "SHIFT", "CAPS" },
             { "SYMBOL", "SYM" }, { "SYMSHIFT", "SYM" }, { "SS", "SYM" },
             { "RETURN", "ENTER" }, { "CR", "ENTER" },
-            { "BREAK", "CAPS+SPACE" }, { "DELETE", "CAPS+0" }, { "DEL", "CAPS+0" }, { "BACKSPACE", "CAPS+0" },
-            { "LEFT", "CAPS+5" }, { "DOWN", "CAPS+6" }, { "UP", "CAPS+7" }, { "RIGHT", "CAPS+8" },
-            { "EDIT", "CAPS+1" }, { "CAPSLOCK", "CAPS+2" }, { "TRUEVIDEO", "CAPS+3" }, { "INVVIDEO", "CAPS+4" },
-            { "GRAPHICS", "CAPS+9" }, { "EXTEND", "CAPS+SYM" },
+            { "DEL", "DELETE" }, { "BACKSPACE", "DELETE" }, { "GRAPH", "GRAPHICS" }, { "INV", "INVVIDEO" }, { "TRUE", "TRUEVIDEO" },
+            { "CAPS_LOCK", "CAPSLOCK" }, { "DOT", "PERIOD" }, { "FULLSTOP", "PERIOD" }, { "DQUOTE", "QUOTE" },
+        };
+
+        /// <summary>
+        ///     The Next's extended keys: SetKeyboardRow row 8 (NR $B0) and row 9 (NR $B1), bit 0 first,
+        ///     and the CAPS/SYM combination each one is for an older CSpect without those rows
+        /// </summary>
+        static readonly string[][] ExtMatrix =
+        {
+            new[] { "RIGHT", "LEFT", "DOWN", "UP", "PERIOD", "COMMA", "QUOTE", "SEMICOLON" },
+            new[] { "EXTEND", "CAPSLOCK", "GRAPHICS", "TRUEVIDEO", "INVVIDEO", "BREAK", "EDIT", "DELETE" },
+        };
+        static readonly string[][] ExtCombos =
+        {
+            new[] { "CAPS+8", "CAPS+5", "CAPS+6", "CAPS+7", "SYM+M", "SYM+N", "SYM+P", "SYM+O" },
+            new[] { "CAPS+SYM", "CAPS+2", "CAPS+9", "CAPS+3", "CAPS+4", "CAPS+SPACE", "CAPS+1", "CAPS+0" },
         };
 
         /// <summary>Characters typed with SYM</summary>
@@ -973,10 +988,25 @@ namespace MCP
             return false;
         }
 
+        /// <summary>Press one Next extended key into rows 8/9, or its CAPS/SYM combination on an older CSpect (false if unknown)</summary>
+        static bool AddExtKey(int[] _rows, string _key)
+        {
+            for (int r = 0; r < 2; r++)
+                for (int b = 0; b < 8; b++)
+                {
+                    if (!string.Equals(ExtMatrix[r][b], _key, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (P.HasExtendedKeys()) _rows[8 + r] &= ~(1 << b);
+                    else foreach (string sub in ExtCombos[r][b].Split('+')) AddKey(_rows, sub);
+                    return true;
+                }
+            return false;
+        }
+
+        /// <summary>Nothing held: rows 0-7 are the 8x5 matrix, 8-9 the Next extended keys (NR $B0/$B1)</summary>
         static int[] NoKeys()
         {
-            int[] r = new int[8];
-            for (int i = 0; i < 8; i++) r[i] = 0xff;
+            int[] r = new int[10];
+            for (int i = 0; i < r.Length; i++) r[i] = 0xff;
             return r;
         }
 
@@ -988,11 +1018,8 @@ namespace MCP
             {
                 string k = raw.Trim();
                 if (k.Length == 0) continue;
-                if (Aliases.TryGetValue(k, out string alias))
-                {
-                    foreach (string sub in alias.Split('+')) AddKey(rows, sub);
-                    continue;
-                }
+                if (Aliases.TryGetValue(k, out string alias)) k = alias;
+                if (AddExtKey(rows, k)) continue;
                 if (!AddKey(rows, k)) throw new ArgumentException("Unknown key '" + k + "'");
             }
             return rows;

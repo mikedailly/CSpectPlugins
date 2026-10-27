@@ -65,6 +65,8 @@ namespace MCP
         int KeysDoneCount;
         readonly object KeyLock = new object();
         internal bool KeysSupported = true;
+        /// <summary>Does this CSpect take the Next extended keys (SetKeyboardRow rows 8-9, NR $B0/$B1)? null = not checked yet</summary>
+        bool? ExtKeysSupported;
 
         /// <summary>Physical breakpoints set through MCP (listing them all means scanning 4MB)</summary>
         internal readonly HashSet<int> PhysicalBreakpointsSet = new HashSet<int>();
@@ -329,18 +331,45 @@ namespace MCP
         void SetRowsNow(int[] _rows)
         {
             bool any = false;
-            for (int r = 0; r < 8; r++)
+            for (int r = 0; r < _rows.Length; r++)
             {
                 CSpect.SetKeyboardRow(r, _rows[r]);
-                if ((_rows[r] & 0x1f) != 0x1f) any = true;
+                if ((_rows[r] & (r < 8 ? 0x1f : 0xff)) != (r < 8 ? 0x1f : 0xff)) any = true;
             }
             KeysHeld = any;
         }
 
+        // *********************************************************************************************************
+        /// <summary>
+        ///     Can keys be held on the Next extended key rows (SetKeyboardRow 8 = NR $B0, 9 = NR $B1)?
+        ///     Older CSpects ignore those rows, so hold RIGHT there and see whether NR $B0 bit 0 follows.
+        ///     (Called on the emulator thread, with no keys queued.)
+        /// </summary>
+        // *********************************************************************************************************
+        internal bool HasExtendedKeys()
+        {
+            if (ExtKeysSupported == null)
+            {
+                if (!KeysSupported) return false;
+                try { ExtKeysSupported = ProbeExtendedKeys(); }
+                catch (MissingMethodException) { KeysSupported = false; ExtKeysSupported = false; }
+            }
+            return ExtKeysSupported == true;
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        bool ProbeExtendedKeys()
+        {
+            CSpect.SetKeyboardRow(8, 0xfe);
+            bool ok = (CSpect.GetNextRegister(0xb0) & 1) != 0;
+            CSpect.SetKeyboardRow(8, 0xff);
+            return ok;
+        }
+
         void ReleaseKeys()
         {
-            int[] none = new int[8];
-            for (int r = 0; r < 8; r++) none[r] = 0xff;
+            int[] none = new int[10];
+            for (int r = 0; r < none.Length; r++) none[r] = 0xff;
             if (CSpect != null) SetRows(none);
             KeysHeld = false;
         }

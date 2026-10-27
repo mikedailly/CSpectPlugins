@@ -592,8 +592,16 @@ namespace Plugin
         ///     Keyboard half-row, by the address line that selects it:
         ///     0 = A8 (CAPS,Z,X,C,V)  1 = A9 (A,S,D,F,G)  2 = A10 (Q,W,E,R,T)  3 = A11 (1,2,3,4,5)
         ///     4 = A12 (0,9,8,7,6)    5 = A13 (P,O,I,U,Y)  6 = A14 (ENTER,L,K,J,H)  7 = A15 (SPACE,SYM,M,N,B)
+        ///     or a ZX Spectrum Next extended key row, laid out as the register that reads it:
+        ///     8 = NR $B0 (bit 7 ;  6 "  5 ,  4 .  3 UP  2 DOWN  1 LEFT  0 RIGHT)
+        ///     9 = NR $B1 (bit 7 DELETE  6 EDIT  5 BREAK  4 INV VIDEO  3 TRUE VIDEO  2 GRAPH  1 CAPS LOCK  0 EXTEND)
+        ///     Extended keys also appear in rows 0-7 as their CAPS/SYM combinations (UP = CAPS+7 etc.),
+        ///     as on the real machine, unless the program sets NR $68 bit 4.
         /// </param>
-        /// <param name="_keys">Bits 0-4, active low (0 = held), in the order above. $FF = none held.</param>
+        /// <param name="_keys">
+        ///     Rows 0-7: bits 0-4, active low (0 = held), in the order above.
+        ///     Rows 8-9: bits 0-7, active low (0 = held). $FF = none held.
+        /// </param>
         // ------------------------------------------------------------
         void SetKeyboardRow(int _row, int _keys);
 

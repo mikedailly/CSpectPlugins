@@ -84,7 +84,10 @@ Addresses and values accept:
   the plugin's `Tick()`, between frames. Calls don't race the emulation. If CSpect is paused, or busy
   with a modal dialog, requests time out after 5 seconds.
 * **Keyboard:** keys go through `iCSpect.SetKeyboardRow`, which holds Spectrum keys on top of the
-  real keyboard. Keys are only pressed while the CPU runs.
+  real keyboard. Keys are only pressed while the CPU runs. The Next's extended keys (UP, DELETE,
+  EXTEND, SEMICOLON...) go on rows 8 and 9, so programs see them in NR $B0/$B1, and CSpect adds
+  their CAPS/SYM combination to the matrix unless NR $68 bit 4 is set. A CSpect without those rows
+  gets the CAPS/SYM combination instead.
 * **Older CSpects:** the plugin uses three newer iCSpect calls, `SetKeyboardRow`, `ListBreakpoints`
   and `ResetMachine`. Without them it still works, except for key presses and resets, and
   `list_breakpoints` can't show port breakpoints.
