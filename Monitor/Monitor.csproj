@@ -43,6 +43,7 @@
     <Compile Include="MonitorPlugin.cs" />
     <Compile Include="MonitorSnapshot.cs" />
     <Compile Include="MonitorView.cs" />
+    <Compile Include="Z88dkListing.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

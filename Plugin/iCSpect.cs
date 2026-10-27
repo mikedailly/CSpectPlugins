@@ -574,6 +574,29 @@ namespace Plugin
 
         // ------------------------------------------------------------
         /// <summary>
+        ///     Source level debugging from a plugin (a symbol loader, say): add a source file, so lines can be
+        ///     given for it with AddSourceLine. It then shows in GetSourceFiles. Adding a file that's already
+        ///     there gives its index again. A file that can't be read still gets an index (its text says so).
+        /// </summary>
+        /// <param name="_filename">Source file (full path)</param>
+        /// <returns>File index (as GetSourceFiles)</returns>
+        // ------------------------------------------------------------
+        int AddSourceFile(string _filename);
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Source level debugging from a plugin: the code of a source line. Call it for each run of the line's
+        ///     code (a loop's test and its body can be in different places), lowest address first.
+        /// </summary>
+        /// <param name="_file">File index (from AddSourceFile)</param>
+        /// <param name="_line">Line number (1 = first line)</param>
+        /// <param name="_physical">Physical address the code starts at (bank * 8192 + offset)</param>
+        /// <param name="_length">Bytes of code</param>
+        // ------------------------------------------------------------
+        void AddSourceLine(int _file, int _line, int _physical, int _length);
+
+        // ------------------------------------------------------------
+        /// <summary>
         ///     Run a debugger command line, exactly as typed into CSpect's own debugger
         ///     (BR, WRITE, READ, PWRITE, INPORT, OUTPORT, PUSH, POP, POKE, OUT, NEXTREG, SET, CLR, LOG,
         ///     SAVE, LOAD, TONE, NEXTBRK, ROM, REWIND, M, G, and register assignments such as "HL $4000").

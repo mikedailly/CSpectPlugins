@@ -80,6 +80,17 @@ namespace Monitor
         const int MAX_SOURCE_STEP = 2000000;
         /// <summary>Source file names, read when the window opens and whenever the CPU stops</summary>
         string[] SourceFileNames = new string[0];
+        /// <summary>
+        ///     z88dk listings (.lis + .map) in use instead of the map file's [FILES]/[LINES]: when CSpect has no source
+        ///     lines, those in the current folder are used; the LIS command picks a folder (and then they win)
+        /// </summary>
+        volatile Z88dkListing Listing;
+        /// <summary>The LIS command's folder (null = the current folder, and only when CSpect has no source lines)</summary>
+        volatile string ListingFolder;
+        /// <summary>The folder's .lis/.map signature when loading last failed (don't keep trying the same files)</summary>
+        string ListingFailedSignature;
+        /// <summary>Source lines come from Listing (emulator thread)</summary>
+        bool UseListing;
 
         // ---- emulator thread state ----
         volatile MonitorSnapshot Latest;
@@ -318,9 +329,9 @@ namespace Monitor
         ///     Local labels too: @name or .name - or a plain name that isn't a label itself - is SCOPE@NAME, where SCOPE
         ///     is the global label the line comes under.
         /// </summary>
-        int[] LabelWords(string _text, string _scope)
+        int[] LabelWords(string _text, string _scope, int _comment)
         {
-            int end = SourceText.CommentStart(_text);
+            int end = _comment;
             List<int> words = SourceText.Words(_text, end < 0 ? _text.Length : end);
             var found = new List<int>();
             for (int w = 0; w < words.Count; w += 2)
@@ -370,16 +381,93 @@ namespace Monitor
         {
             IsLabelCache.Clear();
             FileScopes.Clear();
-            try { SourceFileNames = CSpect.GetSourceFiles().ToArray(); }
-            catch (Exception) { SourceFileNames = new string[0]; }         // older CSpect
+            string[] files;
+            try { files = CSpect.GetSourceFiles().ToArray(); }
+            catch (Exception) { files = new string[0]; }         // older CSpect
+
+            // z88dk listings: the LIS command's folder, or the current folder when the map file has no source lines
+            UseListing = false;
+            string folder = ListingFolder;
+            if (folder != null || files.Length == 0)
+            {
+                if (folder == null) { try { folder = Environment.CurrentDirectory; } catch (Exception) { folder = null; } }
+                if (folder != null)
+                {
+                    Z88dkListing l = Listing;
+                    string sig = Z88dkListing.Signature(folder);
+                    bool same = l != null && string.Equals(l.Folder, System.IO.Path.GetFullPath(folder), StringComparison.OrdinalIgnoreCase);
+                    if ((!same || l.LoadedSignature != sig) && sig.Length > 0 && sig != ListingFailedSignature)
+                    {
+                        string why;
+                        l = Z88dkListing.Load(folder, out why);
+                        ListingFailedSignature = l == null ? sig : null;
+                        if (l != null) Console.WriteLine(" Monitor: " + l.Summary);
+                        Listing = l;
+                    }
+                    else if (!same) l = null;
+                    if (l != null) { files = l.Files.ToArray(); UseListing = true; }
+                }
+            }
+            SourceFileNames = files;
+        }
+
+        // ******************************************************************************************
+        /// <summary>
+        ///     The LIS command (UI thread): use the z88dk listings in a folder (or a .map/.lis file's folder).
+        ///     "LIS OFF" goes back to the map file's source lines.
+        /// </summary>
+        /// <returns>What happened, and whether it's an error</returns>
+        // ******************************************************************************************
+        public string LoadListing(string _path, out bool _error)
+        {
+            _error = false;
+            if (_path.Equals("OFF", StringComparison.OrdinalIgnoreCase))
+            {
+                ListingFolder = null;
+                Listing = null;
+                Queue(ReadSourceFiles);
+                return "z88dk listings off - source lines come from the map file (or the current folder's listings if it has none)";
+            }
+            if (_path.Length == 0)
+            {
+                Z88dkListing cur = Listing;
+                if (cur == null) { _error = true; return "No z88dk listings loaded.  LIS <folder> loads the .lis files there (build with zcc --list -m -Cc-gcline)"; }
+                ListingFolder = cur.Folder;
+                Queue(ReadSourceFiles);
+                return cur.Summary + "  (" + cur.Folder + ")";
+            }
+            string path = _path.Trim().Trim('"');
+            string why;
+            Z88dkListing l = Z88dkListing.Load(path, out why);
+            if (l == null) { _error = true; return why; }
+            Listing = l;
+            ListingFolder = l.Folder;
+            ListingFailedSignature = null;
+            Queue(ReadSourceFiles);
+            return l.Summary;
         }
 
         /// <summary>The source line at a physical address (emulator thread), or null</summary>
         SourceLocation SourceAt(int _physical)
         {
             if (_physical < 0 || SourceFileNames.Length == 0) return null;
+            if (UseListing) { Z88dkListing l = Listing; return l != null ? l.GetLocation(_physical) : null; }
             try { return CSpect.GetSourceLocation(_physical); }
             catch (Exception) { return null; }
+        }
+
+        /// <summary>A source file's lines (emulator thread)</summary>
+        string[] SourceTextOf(int _file)
+        {
+            if (UseListing) { Z88dkListing l = Listing; return (l != null ? l.GetText(_file) : null) ?? new string[0]; }
+            try { return CSpect.GetSourceText(_file) ?? new string[0]; } catch (Exception) { return new string[0]; }
+        }
+
+        /// <summary>Where a source line's code starts (physical), or -1 (emulator thread)</summary>
+        int SourceAddressOf(int _file, int _line)
+        {
+            if (UseListing) { Z88dkListing l = Listing; return l != null ? l.GetAddress(_file, _line) : -1; }
+            try { return CSpect.GetSourceAddress(_file, _line); } catch (Exception) { return -1; }
         }
 
         // ******************************************************************************************
@@ -1109,8 +1197,8 @@ namespace Monitor
                 else if (line > top + visible - 4) top = Math.Max(1, line - visible + 4);      // near the bottom: a line at a time
             }
             if (file < 0 || file >= SourceFileNames.Length) file = 0;
-            string[] text;
-            try { text = CSpect.GetSourceText(file) ?? new string[0]; } catch (Exception) { text = new string[0]; }
+            string[] text = SourceTextOf(file);
+            SourceText.Lang lang = SourceText.LangOf(SourceFileNames[file]);
             top = Math.Max(1, Math.Min(top + scroll, Math.Max(1, text.Length - 2)));
             // remember where we are - unless the UI asked for something else meanwhile (that wins next frame)
             lock (Gate)
@@ -1122,8 +1210,9 @@ namespace Monitor
             for (int i = 0; i < lines && top + i <= text.Length; i++)
             {
                 var row = new SourceRow { Line = top + i, Text = SourceLine(text, top + i) };
-                row.Labels = LabelWords(row.Text, ScopeAt(file, text, row.Line));
-                try { row.Address = CSpect.GetSourceAddress(file, row.Line); } catch (Exception) { row.Address = -1; }
+                row.Comment = SourceText.CommentStart(row.Text, lang);
+                row.Labels = LabelWords(row.Text, ScopeAt(file, text, row.Line), row.Comment);
+                row.Address = SourceAddressOf(file, row.Line);
                 if (row.Address >= 0)
                 {
                     int logical = s.ToLogical(row.Address);

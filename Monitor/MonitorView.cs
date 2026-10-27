@@ -391,6 +391,9 @@ namespace Monitor
             "                        no size is bytes: $1234,10 = 10 bytes",
             "                        <where> can be a calculation: $1234+hl+(a*4)  ix+label  (+ - * / % & | ^ << >>)",
             "TAB <w>,<w>,...         Source view tab widths: each tab in turn, the last repeating (TAB 4,4,4,8)",
+            "LIS [folder]            Source view from z88dk listings: the .lis files and .map in a folder (zcc --list -m,",
+            "                        add -Cc-gcline for every C statement). Used anyway from the current folder when",
+            "                        the map file has no source lines. LIS alone: what's loaded. LIS OFF: map file only",
             "BR <address>            Toggle Breakpoint",
             "BR <bank>:<offset>      Toggle Physical address breakpoint",
             "WRITE <address>         Toggle a WRITE access break point",
@@ -637,6 +640,14 @@ namespace Monitor
                 }
                 if (arg.Length == 0) { WatchViews[ActiveWatch].Enabled = true; SelectWatch = ActiveWatch; SaveWatches(); }
                 else AddWatch(ActiveWatch, arg);
+                return;
+            }
+            if (word == "LIS")
+            {
+                bool err;
+                string msg = Plugin.LoadListing(arg, out err);
+                if (!err && !SourceView && arg.Length > 0 && !arg.Equals("OFF", StringComparison.OrdinalIgnoreCase)) { SourceView = true; Plugin.SetSourceMode(true); }
+                ShowCommandMessage(msg, err);
                 return;
             }
             if (word == "M" || word == "G")
@@ -1012,7 +1023,7 @@ namespace Monitor
                 }
 
                 ImGui.TableSetColumnIndex(2);
-                DrawSourceText(row.Text, row.Labels);
+                DrawSourceText(row.Text, row.Labels, row.Comment);
                 if (ImGui.GetItemRectMax().Y <= bottom) fitted++;
             }
             ImGui.EndTable();
@@ -1020,11 +1031,11 @@ namespace Monitor
             SrcFitted = Math.Max(1, fitted);
         }
 
-        /// <summary>A source line: code, then any ';' comment dimmed (a ';' inside quotes isn't a comment)</summary>
-        static void DrawSourceText(string _text, int[] _labels)
+        /// <summary>A source line: code, then any comment dimmed (_comment: where it starts, by the file's language; -1 = none)</summary>
+        static void DrawSourceText(string _text, int[] _labels, int _comment)
         {
             if (_text.Length == 0) { ImGui.TextUnformatted(" "); return; }
-            int c = SourceText.CommentStart(_text);
+            int c = _comment >= 0 && _comment < _text.Length ? _comment : -1;
             int code = c < 0 ? _text.Length : c;
             // the code, with labels and numbers coloured as in the disassembly
             var spans = new List<int[]>();
@@ -1072,7 +1083,7 @@ namespace Monitor
             ImGui.EndDisabled();
             if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
                 Tip(haveSource ? "Source level debugging: show the source instead of the disassembly.\nStep and Step Over go a source line at a time."
-                               : "No source lines - load a map file with [FILES] and [LINES] sections");
+                               : "No source lines - load a map file with [FILES] and [LINES] sections,\nor build with z88dk's zcc --list -m (-Cc-gcline for every C statement)\nand use LIS <folder> (the current folder's listings are found anyway)");
             ImGui.SameLine(0, S(16));
             if (src)
             {

@@ -53,6 +53,8 @@ namespace Monitor
         public bool PhysicalBreakpoint;
         /// <summary>Words in the code that are labels, as (start, length) pairs</summary>
         public int[] Labels = new int[0];
+        /// <summary>Where the line's comment starts (by the file's language), or -1</summary>
+        public int Comment = -1;
     }
 
     // *********************************************************************************************************
@@ -184,6 +186,48 @@ namespace Monitor
     // *********************************************************************************************************
     public static class SourceText
     {
+        /// <summary>Source languages, for their comments</summary>
+        public enum Lang { Asm, C, Pascal }
+
+        /// <summary>A source file's language, from its extension (anything unknown is asm)</summary>
+        public static Lang LangOf(string _filename)
+        {
+            string ext = "";
+            try { ext = System.IO.Path.GetExtension(_filename ?? "").ToLowerInvariant(); } catch (Exception) { }
+            switch (ext)
+            {
+                case ".c": case ".h": case ".cpp": case ".hpp": return Lang.C;
+                case ".pas": case ".pp": case ".dpr": return Lang.Pascal;
+            }
+            return Lang.Asm;
+        }
+
+        /// <summary>
+        ///     Where a line's comment starts, or -1. Asm: ';'. C: "//" or "/*". Pascal: "//", "{" or "(*".
+        ///     (Not in quotes. Only this line is looked at, so the middle of a comment spanning lines isn't one.)
+        /// </summary>
+        public static int CommentStart(string _text, Lang _lang)
+        {
+            if (_lang == Lang.Asm) return CommentStart(_text);
+            char quote = '\0';
+            for (int i = 0; i < _text.Length; i++)
+            {
+                char ch = _text[i];
+                char next = i + 1 < _text.Length ? _text[i + 1] : '\0';
+                if (quote != '\0')
+                {
+                    if (_lang == Lang.C && ch == '\\') i++;           // C escape
+                    else if (ch == quote) quote = '\0';
+                    continue;
+                }
+                if (ch == '\'' || (_lang == Lang.C && ch == '"')) { quote = ch; continue; }
+                if (ch == '/' && next == '/') return i;
+                if (_lang == Lang.C && ch == '/' && next == '*') return i;
+                if (_lang == Lang.Pascal && (ch == '{' || (ch == '(' && next == '*'))) return i;
+            }
+            return -1;
+        }
+
         /// <summary>Where the ';' comment starts (a ';' in quotes doesn't count), or -1</summary>
         public static int CommentStart(string _text)
         {

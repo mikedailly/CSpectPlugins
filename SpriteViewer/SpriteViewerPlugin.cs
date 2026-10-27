@@ -72,7 +72,6 @@ namespace SpriteViewer
 
             List<sIO> ports = new List<sIO>();
             ports.Add(new sIO("<ctrl><alt>s", eAccess.KeyPress, 0));                   // Open the viewer
-            ports.Add(new sIO("<ctrl><alt>i", eAccess.KeyPress, 1));                   // Load test NEX
             return ports;
         }
 
@@ -86,11 +85,6 @@ namespace SpriteViewer
             if (_id == 0)
             {
                 OpenSpriteWindow = true;
-                return true;
-            }
-            else if (_id == 1)
-            {
-                CSpect.LoadNex(@"C:\source\ZXSpectrum\Demo\Beast\beast.nex");
                 return true;
             }
             return false;
