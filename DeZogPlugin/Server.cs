@@ -289,9 +289,11 @@ namespace DeZogPlugin
                     ParseMessage(handler, state.Data);
                     // Next
                     state.MsgLength = 0;
-                    if (Log.Enabled)
-                        //Log.WriteLine("Count={0}, totallength={1}", state.Data.Count, totalLength);
-                        state.Data.RemoveRange(0, totalLength);
+                    //if (Log.Enabled)
+                    //    Log.WriteLine("Count={0}, totallength={1}", state.Data.Count, totalLength);
+                    // (always: this was left under the if when the log line was commented out, so without
+                    //  logging every message after the first re-parsed the first one)
+                    state.Data.RemoveRange(0, totalLength);
                     //if (Log.Enabled)
                     //{
                     //    if(state.Data.Count<20 || state.Data.Count%1000==0)
