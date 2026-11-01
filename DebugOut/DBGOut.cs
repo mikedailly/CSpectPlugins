@@ -26,7 +26,6 @@ using System.Windows.Forms;
 
 namespace DebugOut
 {
-
     // **********************************************************************
     /// <summary>
     ///     A simple, empty i2C device
@@ -57,6 +56,28 @@ namespace DebugOut
         /// <summary>The current registers at RST $08 call time - updated upon return</summary>
         Z80Regs regs;
         public iCSpect CSpect;
+
+        // *********************************************************************************************************
+        /// <summary>
+        ///     Get the plugin Name
+        /// </summary>
+        /// <returns>Name of the plugin - used in config manager</returns>
+        // *********************************************************************************************************
+        public string GetName()
+        {
+            return "DebugOut";
+        }
+
+        // *********************************************************************************************************
+        /// <summary>
+        ///     Get the plugin description
+        /// </summary>
+        /// <returns>Plugin Description - used in config manager</returns>
+        // *********************************************************************************************************
+        public string GetDescription()
+        {
+            return "Write text to the console";
+        }
 
         // **********************************************************************
         /// <summary>

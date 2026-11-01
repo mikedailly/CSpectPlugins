@@ -21,6 +21,29 @@ namespace i2C_Sample
         public bool m_Internal = false;
 
         public iCSpect CSpect;
+
+
+        // *********************************************************************************************************
+        /// <summary>
+        ///     Get the plugin Name
+        /// </summary>
+        /// <returns>Name of the plugin - used in config manager</returns>
+        // *********************************************************************************************************
+        public string GetName()
+        {
+            return "i2C Null";
+        }
+
+        // *********************************************************************************************************
+        /// <summary>
+        ///     Get the plugin description
+        /// </summary>
+        /// <returns>Plugin Description - used in config manager</returns>
+        // *********************************************************************************************************
+        public string GetDescription()
+        {
+            return "I2C Example plugin";
+        }
         // **********************************************************************
         /// <summary>
         ///     Init the device

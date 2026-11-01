@@ -35,6 +35,29 @@ namespace Profiler
         /// <summary>The profiler UI</summary>
         ProfilerView View;
 
+
+        // *********************************************************************************************************
+        /// <summary>
+        ///     Get the plugin Name
+        /// </summary>
+        /// <returns>Name of the plugin - used in config manager</returns>
+        // *********************************************************************************************************
+        public string GetName()
+        {
+            return "Profiler";
+        }
+
+        // *********************************************************************************************************
+        /// <summary>
+        ///     Get the plugin description
+        /// </summary>
+        /// <returns>Plugin Description - used in config manager</returns>
+        // *********************************************************************************************************
+        public string GetDescription()
+        {
+            return "Simple ZXNext profiler";
+        }
+
         // *********************************************************************************************************
         /// <summary>
         ///     Init the plugin

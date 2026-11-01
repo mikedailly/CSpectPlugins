@@ -309,6 +309,27 @@ namespace esxDOS
             }
         }
 
+        // *********************************************************************************************************
+        /// <summary>
+        ///     Get the plugin Name
+        /// </summary>
+        /// <returns>Name of the plugin - used in config manager</returns>
+        // *********************************************************************************************************
+        public string GetName()
+        {
+            return "esxDOS";
+        }
+
+        // *********************************************************************************************************
+        /// <summary>
+        ///     Get the plugin description
+        /// </summary>
+        /// <returns>Plugin Description - used in config manager</returns>
+        // *********************************************************************************************************
+        public string GetDescription()
+        {
+            return "esxDos filesystem handler";
+        }
         // **********************************************************************
         /// <summary>
         ///     Init the RST 0x08 interface

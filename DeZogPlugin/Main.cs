@@ -22,6 +22,27 @@ namespace DeZogPlugin
         public static iCSpect CSpect;
         public static Settings Settings;
 
+        // *********************************************************************************************************
+        /// <summary>
+        ///     Get the plugin Name
+        /// </summary>
+        /// <returns>Name of the plugin - used in config manager</returns>
+        // *********************************************************************************************************
+        public string GetName()
+        {
+            return "Dezog";
+        }
+
+        // *********************************************************************************************************
+        /// <summary>
+        ///     Get the plugin description
+        /// </summary>
+        /// <returns>Plugin Description - used in config manager</returns>
+        // *********************************************************************************************************
+        public string GetDescription()
+        {
+            return "VSCode remote debugger control";
+        }
 
         // ******************************************************************************************
         /// <summary>

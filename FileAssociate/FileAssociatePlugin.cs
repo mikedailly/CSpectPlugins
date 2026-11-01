@@ -21,6 +21,27 @@ namespace FileAssociate
 
         // *********************************************************************************************************
         /// <summary>
+        ///     Get the plugin Name
+        /// </summary>
+        /// <returns>Name of the plugin - used in config manager</returns>
+        // *********************************************************************************************************
+        public string GetName()
+        {
+            return "FileAssosiate";
+        }
+
+        // *********************************************************************************************************
+        /// <summary>
+        ///     Get the plugin description
+        /// </summary>
+        /// <returns>Plugin Description - used in config manager</returns>
+        // *********************************************************************************************************
+        public string GetDescription()
+        {
+            return "Assosiate .nex files with this CSpect";
+        }
+        // *********************************************************************************************************
+        /// <summary>
         ///     Init the plugin
         /// </summary>
         /// <param name="_CSpect">CSpect interface</param>

@@ -41,6 +41,27 @@ namespace MemoryViewer
         /// <summary>The viewer UI (kept between openings so settings persist)</summary>
         MemoryViewerView View;
 
+        // *********************************************************************************************************
+        /// <summary>
+        ///     Get the plugin Name
+        /// </summary>
+        /// <returns>Name of the plugin - used in config manager</returns>
+        // *********************************************************************************************************
+        public string GetName()
+        {
+            return "memoryViewer";
+        }
+
+        // *********************************************************************************************************
+        /// <summary>
+        ///     Get the plugin description
+        /// </summary>
+        /// <returns>Plugin Description - used in config manager</returns>
+        // *********************************************************************************************************
+        public string GetDescription()
+        {
+            return "View raw memory in various visual bitmap formats";
+        }
 
         // *********************************************************************************************************
         /// <summary>

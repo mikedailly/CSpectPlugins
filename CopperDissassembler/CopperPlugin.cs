@@ -49,6 +49,28 @@ namespace CopperDissassembler
 
         // *********************************************************************************************************
         /// <summary>
+        ///     Get the plugin Name
+        /// </summary>
+        /// <returns>Name of the plugin - used in config manager</returns>
+        // *********************************************************************************************************
+        public string GetName()
+        {
+            return "Copper Disassembler";
+        }
+
+        // *********************************************************************************************************
+        /// <summary>
+        ///     Get the plugin description
+        /// </summary>
+        /// <returns>Plugin Description - used in config manager</returns>
+        // *********************************************************************************************************
+        public string GetDescription()
+        {
+            return "Disassemble the copper and watch it update in realtime";
+        }
+
+        // *********************************************************************************************************
+        /// <summary>
         ///     Init the plugin
         /// </summary>
         /// <param name="_CSpect">CSpect interface</param>

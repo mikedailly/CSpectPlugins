@@ -212,6 +212,28 @@ namespace Printer
 
         public iCSpect CSpect;
 
+        // *********************************************************************************************************
+        /// <summary>
+        ///     Get the plugin Name
+        /// </summary>
+        /// <returns>Name of the plugin - used in config manager</returns>
+        // *********************************************************************************************************
+        public string GetName()
+        {
+            return "PrinterCapture";
+        }
+
+        // *********************************************************************************************************
+        /// <summary>
+        ///     Get the plugin description
+        /// </summary>
+        /// <returns>Plugin Description - used in config manager</returns>
+        // *********************************************************************************************************
+        public string GetDescription()
+        {
+            return "Capture printer output and dump to the console";
+        }
+
         // *********************************************************************
         /// <summary>
         ///     Initializes the interface.

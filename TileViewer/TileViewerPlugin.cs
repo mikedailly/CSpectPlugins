@@ -23,6 +23,27 @@ namespace TileViewer
         // The open window's state (null when closed) - for the tests
         internal TileViewerModel Model { get { return model; } }
 
+        // *********************************************************************************************************
+        /// <summary>
+        ///     Get the plugin Name
+        /// </summary>
+        /// <returns>Name of the plugin - used in config manager</returns>
+        // *********************************************************************************************************
+        public string GetName()
+        {
+            return "TilemapViewer";
+        }
+
+        // *********************************************************************************************************
+        /// <summary>
+        ///     Get the plugin description
+        /// </summary>
+        /// <returns>Plugin Description - used in config manager</returns>
+        // *********************************************************************************************************
+        public string GetDescription()
+        {
+            return "Realtime Tilemap Viewer";
+        }
         public List<sIO> Init(iCSpect emulator)
         {
             cspect = emulator;

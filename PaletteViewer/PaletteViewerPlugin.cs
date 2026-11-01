@@ -84,6 +84,27 @@ namespace PaletteViewer
         private readonly List<ColourEdit> PendingEdits = new List<ColourEdit>();
 
 
+        // *********************************************************************************************************
+        /// <summary>
+        ///     Get the plugin Name
+        /// </summary>
+        /// <returns>Name of the plugin - used in config manager</returns>
+        // *********************************************************************************************************
+        public string GetName()
+        {
+            return "PaletteViewer";
+        }
+
+        // *********************************************************************************************************
+        /// <summary>
+        ///     Get the plugin description
+        /// </summary>
+        /// <returns>Plugin Description - used in config manager</returns>
+        // *********************************************************************************************************
+        public string GetDescription()
+        {
+            return "Realtime Palette viewer and editor";
+        }
         // ------------------------------------------------------------------------------------
         public List<sIO> Init(iCSpect _CSpect)
         {

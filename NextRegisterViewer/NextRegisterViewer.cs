@@ -39,7 +39,27 @@ namespace NextRegisterViewer
         iWindow Window;
         /// <summary>The viewer UI (kept between openings so settings persist)</summary>
         NextRegisterViewerView View;
+        // *********************************************************************************************************
+        /// <summary>
+        ///     Get the plugin Name
+        /// </summary>
+        /// <returns>Name of the plugin - used in config manager</returns>
+        // *********************************************************************************************************
+        public string GetName()
+        {
+            return "Next Register Viewer";
+        }
 
+        // *********************************************************************************************************
+        /// <summary>
+        ///     Get the plugin description
+        /// </summary>
+        /// <returns>Plugin Description - used in config manager</returns>
+        // *********************************************************************************************************
+        public string GetDescription()
+        {
+            return "Realtime Next register viewer";
+        }
         // *********************************************************************************************************
         /// <summary>
         ///     Init the plugin
