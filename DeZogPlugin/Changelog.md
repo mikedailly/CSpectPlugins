@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.4.2
+- Fixed: with logging off, every message after the first was answered as if it were the first
+  (CMD_INIT), so DeZog couldn't connect. It only worked with logging enabled.
+
 ## 2.4.1
 - Added CMD_READ_MEM_BLOCKS and CMD_SET_NEXTREGS
 

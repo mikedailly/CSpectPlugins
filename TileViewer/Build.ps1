@@ -18,11 +18,12 @@ if (!$msbuild) {
     if ($command) { $msbuild = $command.Source }
 }
 if (!$msbuild) { throw 'MSBuild is required (Visual Studio Build Tools is sufficient).' }
-$arguments = @((Join-Path $PSScriptRoot 'TileViewer.csproj'), '/t:Build', "/p:Configuration=$Configuration", "/p:CSpectDirectory=$CSpectDirectory", '/v:minimal', '/nologo')
-$referencePack = Join-Path ${env:ProgramFiles(x86)} 'Reference Assemblies\Microsoft\Framework\.NETFramework\v4.5.2\mscorlib.dll'
+# /restore fetches the ImGui.NET package (PackageReference) before building.
+$arguments = @((Join-Path $PSScriptRoot 'TileViewer.csproj'), '/restore', '/t:Build', "/p:Configuration=$Configuration", "/p:CSpectDirectory=$CSpectDirectory", '/v:minimal', '/nologo')
+$referencePack = Join-Path ${env:ProgramFiles(x86)} 'Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\mscorlib.dll'
 if (!(Test-Path -LiteralPath $referencePack)) {
-    # This plugin uses framework APIs available in 4.5.2; the installed CLR 4
-    # assemblies also allow a local build without installing a targeting pack.
+    # The installed .NET Framework 4.8 runtime assemblies also allow a local
+    # build without installing a targeting pack.
     $runtime = Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319'
     $arguments += "/p:FrameworkPathOverride=$runtime", '/p:BypassFrameworkInstallChecks=true'
 }
@@ -35,9 +36,18 @@ if ($Test) {
     $testDirectory = Join-Path $PSScriptRoot 'obj\Tests'
     New-Item -ItemType Directory -Force -Path $testDirectory | Out-Null
     $testExe = Join-Path $testDirectory 'TileViewer.Tests.exe'
-    & $compiler /nologo /target:exe "/out:$testExe" "/reference:$api" /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll (Join-Path $PSScriptRoot 'TileSnapshot.cs') (Join-Path $PSScriptRoot 'TileMapEditor.cs') (Join-Path $PSScriptRoot 'TileViewerPlugin.cs') (Join-Path $PSScriptRoot 'TileViewerForm.cs') (Join-Path $PSScriptRoot 'Tests\TileViewerTests.cs')
+    # The tests drive the viewer model and a fake window, so no ImGui native library is needed,
+    # but the view still compiles against ImGui.NET from the build output.
+    $output = Join-Path $PSScriptRoot "bin\$Configuration"
+    $imgui = Join-Path $output 'ImGui.NET.dll'
+    $vectors = Join-Path $output 'System.Numerics.Vectors.dll'
+    $references = @("/reference:$api", "/reference:$imgui", '/reference:System.Core.dll', '/reference:System.Drawing.dll', '/reference:System.Numerics.dll')
+    if (Test-Path -LiteralPath $vectors) { $references += "/reference:$vectors" }
+    $sources = 'TileSnapshot.cs', 'TileMapEditor.cs', 'TileViewerPlugin.cs', 'TileViewerModel.cs', 'TileViewerView.cs', 'Tests\TileViewerTests.cs' | ForEach-Object { Join-Path $PSScriptRoot $_ }
+    & $compiler /nologo /target:exe "/out:$testExe" @references @sources
     if ($LASTEXITCODE -ne 0) { throw 'Test compilation failed.' }
     Copy-Item -LiteralPath $api -Destination $testDirectory
+    Get-ChildItem -LiteralPath $output -Filter *.dll | Copy-Item -Destination $testDirectory
     & $testExe $testDirectory
     if ($LASTEXITCODE -ne 0) { throw 'TileViewer tests failed.' }
 }

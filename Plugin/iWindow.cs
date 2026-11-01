@@ -56,5 +56,46 @@ namespace Plugin
         unsafe void DrawImage(UInt32[] sprite, int x, int y, int SrcWidth, int SrcHeight, int destWidth, int destHeight); 
 
 
+        // ******************************************************************************************
+        /// <summary>
+        ///     Draw this window with Dear ImGui instead of the Screen bitmap.
+        ///     The callback is called once a frame on the main (render) thread, inside an ImGui frame that
+        ///     belongs to this window (its own ImGui context and input; fonts are shared with CSpect), so
+        ///     use ImGuiNET.ImGui.* inside it - reference the same ImGui.NET package version as CSpect.
+        ///     ImGui.GetIO().DisplaySize is the window's client size. Pass null to go back to the bitmap.
+        /// </summary>
+        /// <param name="_draw">ImGui draw callback, or null</param>
+        /// <returns>false if ImGui isn't available on this system (no native cimgui)</returns>
+        // ******************************************************************************************
+        bool SetImGuiDraw(Action _draw);
+
+        // ******************************************************************************************
+        /// <summary>
+        ///     Create a texture for ImGui.Image() / ImDrawList.AddImage() in this window's ImGui draw.
+        ///     Freed automatically when the window closes. Call from the main thread (OSTick or the draw callback).
+        /// </summary>
+        /// <param name="_width">Texture width in pixels</param>
+        /// <param name="_height">Texture height in pixels</param>
+        /// <returns>ImGui texture ID, or IntPtr.Zero if ImGui isn't available</returns>
+        // ******************************************************************************************
+        IntPtr CreateImGuiTexture(int _width, int _height);
+
+        // ******************************************************************************************
+        /// <summary>
+        ///     Upload new pixels to a texture made by CreateImGuiTexture() (main thread only)
+        /// </summary>
+        /// <param name="_texture">Texture ID</param>
+        /// <param name="_argb">width*height pixels, 0xAARRGGBB - the same format as Screen[]</param>
+        // ******************************************************************************************
+        void UpdateImGuiTexture(IntPtr _texture, UInt32[] _argb);
+
+        // ******************************************************************************************
+        /// <summary>
+        ///     Free a texture made by CreateImGuiTexture()
+        /// </summary>
+        // ******************************************************************************************
+        void DestroyImGuiTexture(IntPtr _texture);
+
+
     }
 }

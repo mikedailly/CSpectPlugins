@@ -54,6 +54,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="BreakpointInfo.cs" />
     <Compile Include="Function.cs" />
     <Compile Include="iCSpect.cs" />
     <Compile Include="IFileIO.cs" />
@@ -62,6 +63,7 @@
     <Compile Include="iWindow.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="SMemWrite.cs" />
+    <Compile Include="SourceLocation.cs" />
     <Compile Include="SSprite.cs" />
     <Compile Include="Symbol.cs" />
     <Compile Include="Z80Regs.cs" />

@@ -94,6 +94,10 @@ namespace Pasta80Symbols
 
             bool okay = Pasta80.LoadPasta80File(pBuffer);
 
+            // source level debugging: the Pascal lines the .lst file has as comments
+            string source = new Pasta80_Source(CSpect).Load(_path, pBuffer);
+            Console.WriteLine(" Pasta80 source: " + source);
+
             // Add predefined symbols
             CSpect.AddSymbol("CHAN_OPEN", (int)0x1601, (int)0x1601, eLabelType.Address);
             CSpect.AddSymbol("CHAN_OP_1", (int)0x1610, (int)0x1601, eLabelType.Address);

@@ -8,7 +8,8 @@
     <OutputType>Library</OutputType>
     <RootNamespace>TileViewer</RootNamespace>
     <AssemblyName>TileViewer</AssemblyName>
-    <TargetFrameworkVersion>v4.5.2</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <DebugType>pdbonly</DebugType>
@@ -26,15 +27,21 @@
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
-    <Reference Include="System.Drawing" />
-    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Numerics" />
     <Compile Include="TileSnapshot.cs" />
     <Compile Include="TileMapEditor.cs" />
     <Compile Include="TileViewerPlugin.cs" />
-    <Compile Include="TileViewerForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
+    <Compile Include="TileViewerModel.cs" />
+    <Compile Include="TileViewerView.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Dear ImGui, drawn into our own window via iWindow.SetImGuiDraw. Must match CSpect's ImGui.NET version.
+         "build"/"native" assets excluded: CSpect ships the right native cimgui for its own platform. -->
+    <PackageReference Include="ImGui.NET">
+      <Version>1.91.6.1</Version>
+      <ExcludeAssets>build;buildTransitive;native</ExcludeAssets>
+    </PackageReference>
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Plugin\Plugin.csproj">

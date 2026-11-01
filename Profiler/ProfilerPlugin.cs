@@ -1,29 +1,22 @@
-﻿using System;
+﻿// ********************************************************************************************************************************************
+//      CSpect Profiler extension
+//      Written by:
+//                  Mike Dailly
+//
+//      contributions by:
+//
+//      Released under the GNU 3 license - please see license file for more details
+//
+//      <ctrl><alt>p opens the profiler in its own OS window (iCSpect.OpenWindow) drawn with Dear ImGui
+//      (iWindow.SetImGuiDraw) - no WinForms.
+//
+// ********************************************************************************************************************************************
+using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Drawing;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows.Forms;
 using Plugin;
 
 namespace Profiler
 {
-    class WindowWrapper : IWin32Window
-    {
-        private IntPtr mWindowHandle;
-        public IntPtr Handle
-        {
-            get { return mWindowHandle; }
-        }
-
-        public WindowWrapper(IntPtr _handle)
-        {
-            mWindowHandle = _handle;
-        }
-    }
-
     // *********************************************************************************************************
     /// <summary>
     ///     A Basic Profiler
@@ -33,14 +26,15 @@ namespace Profiler
     {
         /// <summary>CSpect emulator interface</summary>
         iCSpect CSpect;
-        public static bool Active;
-        public static ProfilerForm form;
-        byte[] CopperMemory = new byte[2048];
-        bool[] CopperIsWritten= new bool[1024];
+        /// <summary>Is the profiler window open?</summary>
+        public static volatile bool Active;
 
-        bool OpenProfiler = false;
+        volatile bool OpenProfiler = false;
+        /// <summary>Our window (null when closed)</summary>
+        iWindow Window;
+        /// <summary>The profiler UI</summary>
+        ProfilerView View;
 
-        WindowWrapper hwndWrapper;
         // *********************************************************************************************************
         /// <summary>
         ///     Init the plugin
@@ -55,10 +49,8 @@ namespace Profiler
             Console.WriteLine(" Profiler added");
 
             CSpect = _CSpect;
-            IntPtr handle = (IntPtr)CSpect.GetGlobal(eGlobal.window_handle);
-            hwndWrapper = new WindowWrapper(handle);
 
-            // Detect keypress for starting disassembler
+            // Detect keypress for starting the profiler
             List<sIO> ports = new List<sIO>();
             ports.Add(new sIO("<ctrl><alt>p", eAccess.KeyPress, 0));                   // Key press callback
             return ports;
@@ -68,12 +60,9 @@ namespace Profiler
         /// <summary>
         ///     Key pressed callback.
         /// </summary>
-        /// <param name="_id"></param>
-        /// <returns></returns>
         // ******************************************************************************************
         public bool KeyPressed(int _id)
         {
-
             if (_id == 0)
             {
                 OpenProfiler = true;
@@ -89,16 +78,19 @@ namespace Profiler
         // ******************************************************************************************
         public void Quit()
         {
+            Active = false;
+            if (Window != null)
+            {
+                iWindow w = Window;
+                Window = null;
+                w.Close();
+            }
         }
 
         // ******************************************************************************************
         /// <summary>
         ///     Read access type - not used
         /// </summary>
-        /// <param name="_type"></param>
-        /// <param name="_address"></param>
-        /// <param name="_isvalid"></param>
-        /// <returns></returns>
         // ******************************************************************************************
         public byte Read(eAccess _type, int _address, int _id, out bool _isvalid)
         {
@@ -117,49 +109,53 @@ namespace Profiler
 
         // ******************************************************************************************
         /// <summary>
-        ///     Called once an emulator frame - update copper if "Active"
+        ///     Called once an emulator frame - the emulator accumulates the profile itself
         /// </summary>
         // ******************************************************************************************
         public void Tick()
         {
-            if (form != null)
-            {
-                //form.ProfileRead = (int[])CSpect.GetGlobal(eGlobal.profile_read);
-                //form.ProfileGroup.Invalidate(true);
-                //form.Invalidate(true);
-                //Application.DoEvents();
-            }
         }
 
         // ******************************************************************************************
         /// <summary>
-        ///     Called once an OS emulator frame - do all UI rendering, opening windows etc here.
+        ///     Called once an OS frame - open the window when asked
         /// </summary>
         // ******************************************************************************************
         public void OSTick()
         {
-            if (OpenProfiler)
+            if (!OpenProfiler) return;
+            OpenProfiler = false;
+            if (Window != null) return;                     // already open
+
+            iWindow w = CSpect.OpenWindow("Profiler", 1314, 698);
+            if (w == null) return;
+            if (View == null) View = new ProfilerView(CSpect);  // keep the last profile between openings
+            if (!w.SetImGuiDraw(View.Draw))
             {
-                OpenProfiler = false;
-                if (!Active)
-                {
-                    Active = true;
-                    form = new ProfilerForm(CSpect);
-                    form.Show();
-                }
+                Console.WriteLine(" Profiler: Dear ImGui not available on this system");
+                w.Close();
+                return;
             }
+            w.OnClosed += Window_OnClosed;
+            Window = w;
+            Active = true;
         }
 
-
+        // ******************************************************************************************
+        /// <summary>
+        ///     Our window was closed (by the user, or Quit)
+        /// </summary>
+        // ******************************************************************************************
+        private void Window_OnClosed(object sender, EventArgs e)
+        {
+            Active = false;
+            Window = null;
+        }
 
         // ******************************************************************************************
         /// <summary>
         ///     Write access type - not used
         /// </summary>
-        /// <param name="_type"></param>
-        /// <param name="_port"></param>
-        /// <param name="_value"></param>
-        /// <returns></returns>
         // ******************************************************************************************
         public bool Write(eAccess _type, int _port, int _id, byte _value)
         {

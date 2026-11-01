@@ -513,6 +513,140 @@ namespace Plugin
 
         // ------------------------------------------------------------
         /// <summary>
+        ///     Find a symbol by name (case insensitive)
+        /// </summary>
+        /// <param name="_name">Symbol name</param>
+        /// <returns>
+        ///     The symbol (value = 64k address, PhysicalAddress = physical address), or null if not found
+        /// </returns>
+        // ------------------------------------------------------------
+        Symbol FindSymbol(string _name);
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Find symbols whose names start with - then contain - some text (case insensitive),
+        ///     sorted by name. For auto-complete.
+        /// </summary>
+        /// <param name="_text">Text to look for</param>
+        /// <param name="_max">Most symbols to return</param>
+        /// <returns>
+        ///     The matching symbols (never null)
+        /// </returns>
+        // ------------------------------------------------------------
+        List<Symbol> FindSymbols(string _text, int _max);
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Source level debugging: the source files named in the map file's [FILES] section (file index = list index).
+        ///     Empty if the map file had no source information.
+        /// </summary>
+        // ------------------------------------------------------------
+        List<string> GetSourceFiles();
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     The text of a source file, as it is in the file (tabs are left in - expand them as you draw), or null for a bad index
+        /// </summary>
+        /// <param name="_file">File index (as GetSourceFiles)</param>
+        // ------------------------------------------------------------
+        string[] GetSourceText(int _file);
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Which source line a physical address belongs to (from the map file's [LINES] section)
+        /// </summary>
+        /// <param name="_physical">Physical address (bank * 8192 + offset)</param>
+        /// <returns>
+        ///     The line (Address = where that line's code starts), or null if the address has no source line
+        /// </returns>
+        // ------------------------------------------------------------
+        SourceLocation GetSourceLocation(int _physical);
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     The physical address of a source line's code
+        /// </summary>
+        /// <param name="_file">File index</param>
+        /// <param name="_line">Line number (1 = first line)</param>
+        /// <returns>Physical address, or -1 if the line has no code</returns>
+        // ------------------------------------------------------------
+        int GetSourceAddress(int _file, int _line);
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Source level debugging from a plugin (a symbol loader, say): add a source file, so lines can be
+        ///     given for it with AddSourceLine. It then shows in GetSourceFiles. Adding a file that's already
+        ///     there gives its index again. A file that can't be read still gets an index (its text says so).
+        /// </summary>
+        /// <param name="_filename">Source file (full path)</param>
+        /// <returns>File index (as GetSourceFiles)</returns>
+        // ------------------------------------------------------------
+        int AddSourceFile(string _filename);
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Source level debugging from a plugin: the code of a source line. Call it for each run of the line's
+        ///     code (a loop's test and its body can be in different places), lowest address first.
+        /// </summary>
+        /// <param name="_file">File index (from AddSourceFile)</param>
+        /// <param name="_line">Line number (1 = first line)</param>
+        /// <param name="_physical">Physical address the code starts at (bank * 8192 + offset)</param>
+        /// <param name="_length">Bytes of code</param>
+        // ------------------------------------------------------------
+        void AddSourceLine(int _file, int _line, int _physical, int _length);
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Run a debugger command line, exactly as typed into CSpect's own debugger
+        ///     (BR, WRITE, READ, PWRITE, INPORT, OUTPORT, PUSH, POP, POKE, OUT, NEXTREG, SET, CLR, LOG,
+        ///     SAVE, LOAD, TONE, NEXTBRK, ROM, REWIND, M, G, and register assignments such as "HL $4000").
+        ///     Call on the emulator thread (from Tick).
+        /// </summary>
+        /// <param name="_command">The command line</param>
+        /// <returns>The message the command gave (an error, or "Test Tone ON" etc), or null if it said nothing</returns>
+        // ------------------------------------------------------------
+        string DebugCommand(string _command);
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Hold Spectrum keys down, on top of the real keyboard. Keys stay held until the row is set back to $FF.
+        /// </summary>
+        /// <param name="_row">
+        ///     Keyboard half-row, by the address line that selects it:
+        ///     0 = A8 (CAPS,Z,X,C,V)  1 = A9 (A,S,D,F,G)  2 = A10 (Q,W,E,R,T)  3 = A11 (1,2,3,4,5)
+        ///     4 = A12 (0,9,8,7,6)    5 = A13 (P,O,I,U,Y)  6 = A14 (ENTER,L,K,J,H)  7 = A15 (SPACE,SYM,M,N,B)
+        ///     or a ZX Spectrum Next extended key row, laid out as the register that reads it:
+        ///     8 = NR $B0 (bit 7 ;  6 "  5 ,  4 .  3 UP  2 DOWN  1 LEFT  0 RIGHT)
+        ///     9 = NR $B1 (bit 7 DELETE  6 EDIT  5 BREAK  4 INV VIDEO  3 TRUE VIDEO  2 GRAPH  1 CAPS LOCK  0 EXTEND)
+        ///     Extended keys also appear in rows 0-7 as their CAPS/SYM combinations (UP = CAPS+7 etc.),
+        ///     as on the real machine, unless the program sets NR $68 bit 4.
+        /// </param>
+        /// <param name="_keys">
+        ///     Rows 0-7: bits 0-4, active low (0 = held), in the order above.
+        ///     Rows 8-9: bits 0-7, active low (0 = held). $FF = none held.
+        /// </param>
+        // ------------------------------------------------------------
+        void SetKeyboardRow(int _row, int _keys);
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Every breakpoint that's set: execute (64K and physical), memory read/write and port in/out.
+        ///     Call on the emulator thread (from Tick).
+        /// </summary>
+        /// <returns>The breakpoints, in type then address order</returns>
+        // ------------------------------------------------------------
+        List<BreakpointInfo> ListBreakpoints();
+
+        // ------------------------------------------------------------
+        /// <summary>
+        ///     Reset the machine, as F3 (hard) or NextReg $02 (soft) would. Call on the emulator thread (from Tick).
+        /// </summary>
+        /// <param name="_hard">true for a hard reset (F3), false for a soft reset</param>
+        // ------------------------------------------------------------
+        void ResetMachine(bool _hard = true);
+
+        // ------------------------------------------------------------
+        /// <summary>
         ///     Hex string to Int64 - will stop on an illegal character
         /// </summary>
         /// <param name="_hex">String to convert ($0000, 0x0000 or just 00000)</param>

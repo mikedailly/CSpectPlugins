@@ -1,13 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Drawing.Imaging;
 using System.Linq;
-using System.Reflection;
 using System.Runtime.Remoting.Messaging;
 using System.Runtime.Remoting.Proxies;
-using System.Runtime.InteropServices;
-using System.Windows.Forms;
 using Plugin;
 
 namespace TileViewer
@@ -18,7 +14,6 @@ namespace TileViewer
         private static void Check(bool condition, string name)
         { if (!condition) throw new Exception(name); checks++; }
 
-        [STAThread]
         private static int Main(string[] args)
         {
             try
@@ -28,69 +23,13 @@ namespace TileViewer
                 TestPixelsAndUsage();
                 TestTextAndChanges();
                 TestMapEditing();
-                TestEditingWindow(args[0]);
-                TestHostKeyboardQueue();
-                TestWindow(args[0]);
-                Console.WriteLine("PASS: " + checks + " checks (capture, banking, decoding, live updates, and window lifecycle).");
+                TestEditingWindow();
+                TestWindow();
+                Console.WriteLine("PASS: " + checks + " checks (capture, banking, decoding, editing, live updates, and window lifecycle).");
                 return 0;
             }
             catch (Exception error) { Console.Error.WriteLine(error); return 1; }
         }
-
-        private static void TestHostKeyboardQueue()
-        {
-            var fake = new Emulator();
-            var plugin = new TileViewerPlugin();
-            plugin.Init(fake.Api); plugin.KeyPressed(0); plugin.OSTick();
-            var host = new NativeWindow();
-            host.CreateHandle(new CreateParams { Caption = "Emulator message queue regression", Parent = new IntPtr(-3) });
-            try
-            {
-                // CSpect polls its own queue. Its messages must remain queued after OSTick.
-                int[] keys = { (int)Keys.Return, (int)Keys.Tab, (int)Keys.Escape, (int)Keys.F5 };
-                foreach (int key in keys)
-                {
-                    Check(PostMessage(host.Handle, 0x100, new IntPtr(key), IntPtr.Zero), "queue host keydown " + key);
-                    Check(PostMessage(host.Handle, 0x101, new IntPtr(key), IntPtr.Zero), "queue host keyup " + key);
-                    plugin.OSTick();
-                    NativeMessage message;
-                    Check(PeekMessage(out message, host.Handle, 0x100, 0x101, 1) && message.Id == 0x100 && message.WParam.ToInt32() == key, "viewer leaves host keydown queued " + key);
-                    Check(PeekMessage(out message, host.Handle, 0x100, 0x101, 1) && message.Id == 0x101, "viewer leaves host keyup queued " + key);
-                }
-                var form = Application.OpenForms.OfType<TileViewerForm>().Single();
-                ComboBox selector = form.Controls.OfType<TabControl>().Single().TabPages[0].Controls.OfType<FlowLayoutPanel>().Single().Controls.OfType<ComboBox>().Single(c => c.Name == "TileCount");
-                selector.Focus();
-                Check(PostMessage(selector.Handle, 0x100, new IntPtr((int)Keys.Down), new IntPtr(1)), "queue viewer selector key");
-                plugin.OSTick();
-                Check(selector.SelectedIndex == 1, "filtered pump still supports keyboard selection in viewer controls");
-                Check(PostMessage(IntPtr.Zero, 0x12, new IntPtr(123), IntPtr.Zero), "queue host quit message");
-                plugin.OSTick();
-                NativeMessage quit;
-                Check(PeekMessage(out quit, IntPtr.Zero, 0x12, 0x12, 1) && quit.Id == 0x12 && quit.WParam.ToInt32() == 123, "viewer leaves host quit message queued");
-                bool closed = false;
-                form.FormClosed += delegate { closed = true; };
-                Check(PostMessage(form.Handle, 0x10, IntPtr.Zero, IntPtr.Zero), "queue viewer close");
-                plugin.OSTick();
-                Check(closed, "viewer still processes its own window messages");
-            }
-            finally { host.DestroyHandle(); plugin.Quit(); }
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct NativeMessage
-        {
-            internal IntPtr Window;
-            internal uint Id;
-            internal IntPtr WParam, LParam;
-            internal uint Time;
-            internal Point Position;
-            internal uint Private;
-        }
-
-        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-        private static extern bool PeekMessage(out NativeMessage message, IntPtr window, uint minimum, uint maximum, uint remove);
-        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-        private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
 
         private static void TestMemoryAndCapture()
         {
@@ -131,24 +70,21 @@ namespace TileViewer
             Check(frame.Definitions[0] == 0x12, "display-address change preserves physical ULA reads");
             Check(frame.BankAddress(frame.DefinitionsBase, 341 * 32) == 0x74a0, "tile 341 displays $74A0 instead of $174A0");
             Check(frame.BankAddress(frame.DefinitionsBase, 431 * 32) == 0x7fe0 && frame.BankAddress(frame.DefinitionsBase, 432 * 32) == 0x4000, "bank 5 tile addresses wrap at $8000");
-            using (var form = new TileViewerForm())
-            {
-                form.UpdateFrame(frame);
-                Check(form.Controls.OfType<Label>().Any(l => l.Text.Contains("Map $4000 | tiles $4A00")), "header displays user's map and tile bases");
-                var tabs = form.Controls.OfType<TabControl>().Single();
-                tabs.TabPages[0].Controls.OfType<FlowLayoutPanel>().Single().Controls.OfType<ComboBox>().Single(c => c.Name == "TileCount").SelectedIndex = 1;
-                typeof(TileViewerForm).GetMethod("UpdateTileDetails", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(form, new object[] { 341 });
-                Check(form.Controls.OfType<Label>().Any(l => l.Text.Contains("Tile 341") && l.Text.Contains("address $74A0")), "hover footer uses user's Spectrum address");
-                fake.Registers[0x6e] = 0x12;
-                fake.Registers[0x6f] = 0x94;
-                fake.Bank7[0x1400] = 0x56;
-                TileSnapshot relocated = TileSnapshot.Capture(fake.Api);
-                Check(!frame.SameAs(relocated) && relocated.Definitions[0] == 0x56, "changing NextReg $6F changes the bank and pattern read location");
-                form.UpdateFrame(relocated);
-                Check(form.Controls.OfType<Label>().Any(l => l.Text.Contains("Map $5200 | tiles $D400")), "header follows live NextReg $6E and $6F values");
-                typeof(TileViewerForm).GetMethod("UpdateTileDetails", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(form, new object[] { 0 });
-                Check(form.Controls.OfType<Label>().Any(l => l.Text.Contains("address $D400") && l.Text.Contains("bank 7")), "tile hover follows register-selected bank and base");
-            }
+            var view = new TileViewerModel();
+            view.UpdateFrame(frame);
+            Check(view.Summary.Contains("Map $4000 | tiles $4A00"), "header displays user's map and tile bases");
+            view.TileCountIndex = 1;
+            view.UpdateTileDetails(341);
+            Check(view.Details.Contains("Tile 341") && view.Details.Contains("address $74A0"), "hover footer uses user's Spectrum address");
+            fake.Registers[0x6e] = 0x12;
+            fake.Registers[0x6f] = 0x94;
+            fake.Bank7[0x1400] = 0x56;
+            TileSnapshot relocated = TileSnapshot.Capture(fake.Api);
+            Check(!frame.SameAs(relocated) && relocated.Definitions[0] == 0x56, "changing NextReg $6F changes the bank and pattern read location");
+            view.UpdateFrame(relocated);
+            Check(view.Summary.Contains("Map $5200 | tiles $D400"), "header follows live NextReg $6E and $6F values");
+            view.UpdateTileDetails(0);
+            Check(view.Details.Contains("address $D400") && view.Details.Contains("bank 7"), "tile hover follows register-selected bank and base");
         }
 
         private static TileSnapshot Frame()
@@ -233,11 +169,10 @@ namespace TileViewer
             Check(frame.TilePixels(new TileEntry(0, 0, 0), null, frame.Bank7Definitions)[0] == TileSnapshot.Argb(fake.Palette[2]), "bank 7 can be previewed independently of active bank 5");
         }
 
-        private static void TestWindow(string outputDirectory)
+        private static void TestWindow()
         {
             var fake = new Emulator();
             fake.Registers[0x6b] = 0x80; fake.Registers[0x6e] = 0x20; fake.Registers[0x4c] = 0;
-            // A small coloured tile set makes the visual smoke test readable.
             for (int cell = 0; cell < 1280; cell++) { fake.Bank5[0x2000 + cell * 2] = (byte)(cell % 12); fake.Bank5[0x2001 + cell * 2] = (byte)((cell % 4) << 4); }
             for (int tile = 0; tile < 12; tile++)
                 for (int y = 0; y < 8; y++)
@@ -248,74 +183,61 @@ namespace TileViewer
             List<sIO> hooks = plugin.Init(fake.Api);
             Check(hooks.Count == 1 && hooks[0].CMD == "<ctrl><alt>t" && hooks[0].Type == eAccess.KeyPress && plugin.KeyPressed(0) && !plugin.KeyPressed(1), "Ctrl+Alt+T registered and handled only for registered ID");
             plugin.OSTick(); plugin.Tick(); plugin.OSTick();
-            Check(Application.OpenForms.Count == 1, "viewer opens");
-            var form = Application.OpenForms[0];
-            Check(form.Text.Contains("Tile Viewer"), "viewer title");
-            var tabs = form.Controls.OfType<TabControl>().Single();
-            Panel canvas = tabs.TabPages[0].Controls.OfType<Panel>().Single(p => !(p is FlowLayoutPanel));
-            var controls = tabs.TabPages[0].Controls.OfType<FlowLayoutPanel>().Single();
-            ComboBox count = controls.Controls.OfType<ComboBox>().Single(c => c.Name == "TileCount");
-            ComboBox palette = controls.Controls.OfType<ComboBox>().Single(c => c.Name == "Palette");
-            ComboBox offset = controls.Controls.OfType<ComboBox>().Single(c => c.Name == "PaletteOffset");
-            ComboBox bank = controls.Controls.OfType<ComboBox>().Single(c => c.Name == "Bank");
-            var imageField = canvas.GetType().GetField("images", BindingFlags.Instance | BindingFlags.NonPublic);
-            var hitTest = canvas.GetType().GetMethod("TileAt", BindingFlags.Instance | BindingFlags.NonPublic);
-            Func<List<Bitmap>> images = () => (List<Bitmap>)imageField.GetValue(canvas);
-            Check(images().Count == 256 && canvas.AutoScrollMinSize == new Size(640, 640), "default grid displays all 256 patterns in 16 columns");
-            Check((int)hitTest.Invoke(canvas, new object[] { new Point(604, 4) }) == 15 && (int)hitTest.Invoke(canvas, new object[] { new Point(4, 44) }) == 16, "grid wraps after sixteen tiles");
-            int oldWidth = form.Width;
-            form.Width += 120;
-            Check((int)hitTest.Invoke(canvas, new object[] { new Point(4, 44) }) == 16, "resizing retains sixteen-column layout");
-            form.Width = oldWidth;
-            offset.SelectedIndex = 1;
-            Check(images()[0].GetPixel(0, 0).ToArgb() == TileSnapshot.Argb(fake.Palette[17]), "palette offset selector redraws tile previews");
+            Check(fake.OpenWindows == 1, "viewer opens its own window");
+            FakeWindow window = fake.Windows.Last();
+            Check(window.Title.Contains("Tile Viewer"), "viewer title");
+            Check(window.Draw != null, "window is drawn with Dear ImGui");
+            TileViewerModel view = plugin.Model;
+            Check(view.TileCountShown == 256 && view.GridWidth == 640 && view.GridHeight == 640, "default grid displays all 256 patterns in 16 columns");
+            Check(view.TileAt(604, 4) == 15 && view.TileAt(4, 44) == 16, "grid wraps after sixteen tiles");
+            view.PaletteOffsetIndex = 1;
+            Check(view.TilePixel(0, 0, 0) == TileSnapshot.Argb(fake.Palette[17]), "palette offset selector redraws tile previews");
             fake.Palette2[17] = 0x1c0; plugin.Tick(); plugin.OSTick();
-            palette.SelectedIndex = 2;
-            Check(images()[0].GetPixel(0, 0).ToArgb() == Color.Red.ToArgb() && fake.Registers[0x6b] == 0x80, "secondary palette preview does not change emulator palette");
-            bank.SelectedIndex = 2;
-            Check(images()[0].GetPixel(0, 0).ToArgb() == Color.Blue.ToArgb() && fake.Registers[0x6f] == 0, "bank 7 selector previews alternate bank without changing emulator");
+            view.PaletteIndex = 2;
+            Check(view.TilePixel(0, 0, 0) == Color.Red.ToArgb() && fake.Registers[0x6b] == 0x80, "secondary palette preview does not change emulator palette");
+            view.BankIndex = 2;
+            Check(view.TilePixel(0, 0, 0) == Color.Blue.ToArgb() && fake.Registers[0x6f] == 0, "bank 7 selector previews alternate bank without changing emulator");
             fake.Bank7[0] = 0x33; plugin.Tick(); plugin.OSTick();
-            Check(images()[0].GetPixel(0, 0).ToArgb() == Color.White.ToArgb(), "selected inactive bank updates live");
-            bank.SelectedIndex = 0;
-            Check(images()[0].GetPixel(0, 0).ToArgb() == Color.Red.ToArgb(), "active bank selector follows bank 5");
+            Check(view.TilePixel(0, 0, 0) == Color.White.ToArgb(), "selected inactive bank updates live");
+            view.BankIndex = 0;
+            Check(view.TilePixel(0, 0, 0) == Color.Red.ToArgb(), "active bank selector follows bank 5");
             fake.Registers[0x6f] = 0x80; plugin.Tick(); plugin.OSTick();
-            Check(images()[0].GetPixel(0, 0).ToArgb() == Color.White.ToArgb(), "active bank selector follows hardware bank switches");
-            canvas.GetType().GetMethod("OnMouseMove", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(canvas, new object[] { new MouseEventArgs(MouseButtons.None, 0, 4, 4, 0) });
-            Check(form.Controls.OfType<Label>().Any(l => l.Text.Contains("bank 7") && l.Text.Contains("address $C000") && !l.Text.Contains("pattern")), "hover footer reports bank 7 Spectrum address");
+            Check(view.TilePixel(0, 0, 0) == Color.White.ToArgb(), "active bank selector follows hardware bank switches");
+            view.TilesMouseMove(4, 4);
+            Check(view.Details.Contains("bank 7") && view.Details.Contains("address $C000") && !view.Details.Contains("pattern"), "hover footer reports bank 7 Spectrum address");
             fake.Registers[0x6f] = 0; plugin.Tick(); plugin.OSTick();
-            count.SelectedIndex = 1;
-            Check(images().Count == 512 && canvas.AutoScrollMinSize == new Size(640, 1280), "512 selection extends to thirty-two rows");
+            view.TileCountIndex = 1;
+            Check(view.TileCountShown == 512 && view.GridHeight == 1280, "512 selection extends to thirty-two rows");
             fake.Registers[0x6b] = 0; plugin.Tick(); plugin.OSTick();
-            Check(images().Count == 512, "all tiles remain visible while map is disabled");
+            Check(view.TileCountShown == 512, "all tiles remain visible while map is disabled");
             fake.Registers[0x6b] = 0x88; plugin.Tick(); plugin.OSTick();
-            Check(offset.Items.Count == 128, "text mode offers all ink/paper palette pairs");
+            Check(view.PaletteOffsetCount == 128, "text mode offers all ink/paper palette pairs");
             fake.Registers[0x6b] = 0x80; plugin.Tick(); plugin.OSTick();
-            Check(offset.Items.Count == 16, "graphics mode restores sixteen palette offsets");
-            count.SelectedIndex = 0; palette.SelectedIndex = 0; offset.SelectedIndex = 0;
-            using (var bitmap = new Bitmap(form.Width, form.Height))
-            { form.DrawToBitmap(bitmap, new Rectangle(0, 0, form.Width, form.Height)); bitmap.Save(System.IO.Path.Combine(outputDirectory, "tiles-in-use.png"), ImageFormat.Png); }
+            Check(view.PaletteOffsetCount == 16, "graphics mode restores sixteen palette offsets");
+            view.TileCountIndex = 0; view.PaletteIndex = 0; view.PaletteOffsetIndex = 0;
+            int atlasVersion = view.TileAtlasVersion;
+            fake.Bank5[0] ^= 0x11; plugin.Tick(); plugin.OSTick();
+            Check(view.TileAtlasVersion != atlasVersion, "pattern changes mark the tile texture for upload");
             plugin.KeyPressed(0); plugin.OSTick();
-            Check(Application.OpenForms.Count == 1, "repeat hotkey reuses window");
-            tabs.SelectedIndex = 1; Application.DoEvents();
-            Panel mapCanvas = tabs.TabPages[1].Controls.OfType<Panel>().Single(p => !(p is FlowLayoutPanel));
+            Check(fake.OpenWindows == 1 && !window.Closed, "repeat hotkey reuses window");
+            view.SelectTab(1);
+            int mapVersion = view.MapImageVersion;
             fake.Bank5[0x2001] = 0x40; plugin.Tick(); plugin.OSTick();
-            mapCanvas.GetType().GetMethod("OnMouseMove", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(mapCanvas, new object[] { new MouseEventArgs(MouseButtons.None, 0, 4, 4, 0) });
-            Check(form.Controls.OfType<Label>().Any(l => l.Text.Contains("palette 4") && !l.Text.Contains("palette offset")), "map hover shows decimal palette number 0..15");
-            using (var bitmap = new Bitmap(form.Width, form.Height))
-            { form.DrawToBitmap(bitmap, new Rectangle(0, 0, form.Width, form.Height)); bitmap.Save(System.IO.Path.Combine(outputDirectory, "tilemap.png"), ImageFormat.Png); }
-            TileSnapshot before = (TileSnapshot)typeof(TileViewerForm).GetField("frame", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form);
+            Check(view.MapImageVersion != mapVersion, "map changes mark the map texture for upload");
+            view.MapMouseMove(4, 4);
+            Check(view.Details.Contains("palette 4") && !view.Details.Contains("palette offset"), "map hover shows decimal palette number 0..15");
+            TileSnapshot before = view.Frame;
             fake.Palette[1] ^= 511; plugin.Tick(); plugin.OSTick();
-            TileSnapshot after = (TileSnapshot)typeof(TileViewerForm).GetField("frame", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form);
-            Check(before.Palette[1] != after.Palette[1], "palette-only refresh reaches form");
-            form.Close(); plugin.Tick(); plugin.OSTick();
-            Check(Application.OpenForms.Count == 0, "viewer closes");
+            Check(before.Palette[1] != view.Frame.Palette[1], "palette-only refresh reaches the viewer");
+            window.UserClose(); plugin.Tick(); plugin.OSTick();
+            Check(window.Closed && plugin.Model == null, "viewer closes");
             plugin.KeyPressed(0); plugin.OSTick(); plugin.Tick(); plugin.OSTick();
-            Check(Application.OpenForms.Count == 1, "viewer reopens");
+            Check(fake.Windows.Count == 2 && fake.OpenWindows == 1 && !fake.Windows.Last().Closed && plugin.Model != null && plugin.Model.Frame != null, "viewer reopens");
             plugin.Reset(); plugin.Tick(); plugin.OSTick();
             bool valid; plugin.Read(eAccess.Memory_Read, 0, 0, out valid);
             Check(!valid && !plugin.Write(eAccess.Memory_Write, 0, 0, 0), "viewer does not intercept memory");
             plugin.Quit();
-            Check(Application.OpenForms.Count == 0, "quit releases window");
+            Check(fake.Windows.Last().Closed && plugin.Model == null, "quit releases window");
         }
 
         private static void TestMapEditing()
@@ -373,7 +295,7 @@ namespace TileViewer
             Check(!editor.HasPending && !editor.CanUndo && !editor.ApplyPending(fake.Api), "reset clears queued edits and undo history");
         }
 
-        private static void TestEditingWindow(string outputDirectory)
+        private static void TestEditingWindow()
         {
             var fake = new Emulator();
             fake.Registers[0x6b] = 0x82; fake.Registers[0x6e] = 0x20;
@@ -384,71 +306,91 @@ namespace TileViewer
             plugin.Init(fake.Api); plugin.KeyPressed(0); plugin.OSTick();
             try
             {
-                var form = Application.OpenForms.OfType<TileViewerForm>().Single();
-                Check(form.Controls.OfType<Label>().Any(l => l.Text.Contains("Map $6000")), "opening while already paused captures the map without Tick");
+                TileViewerModel view = plugin.Model;
+                Check(view.Summary.Contains("Map $6000"), "opening while already paused captures the map without Tick");
                 fake.DebuggerState = 0;
                 plugin.Tick(); plugin.OSTick();
-                var tabs = form.Controls.OfType<TabControl>().Single();
-                tabs.SelectedIndex = 1;
-                Panel canvas = tabs.TabPages[1].Controls.OfType<Panel>().Single(p => !(p is FlowLayoutPanel));
-                var controls = tabs.TabPages[1].Controls.OfType<FlowLayoutPanel>().Single();
-                var tools = controls.Controls.OfType<RadioButton>().ToArray();
-                var draw = tools.Single(c => c.Name == "DrawTool");
-                var clearTool = tools.Single(c => c.Name == "ClearTool");
-                var pick = tools.Single(c => c.Name == "PickTool");
-                Check(tools.Length == 3 && draw.Checked && !clearTool.Checked && !pick.Checked &&
-                    !controls.Controls.OfType<CheckBox>().Any(c => c.Name == "EditEnabled") &&
-                    !controls.Controls.OfType<ComboBox>().Any(), "toolbar has three tool buttons with Draw selected and no edit checkbox or dropdown");
-                var tile = controls.Controls.OfType<NumericUpDown>().Single(c => c.Name == "BrushTile");
-                var palette = controls.Controls.OfType<NumericUpDown>().Single(c => c.Name == "BrushPalette");
-                var clear = controls.Controls.OfType<NumericUpDown>().Single(c => c.Name == "ClearTile");
-                Action<string, MouseEventArgs> mouse = (name, e) => canvas.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic).Invoke(canvas, new object[] { e });
-                var left = new MouseEventArgs(MouseButtons.Left, 1, 4, 4, 0);
-                pick.Checked = true;
-                Check(pick.Checked && !draw.Checked && !clearTool.Checked, "Pick button exclusively selects the pick tool");
-                mouse("OnMouseDown", left); mouse("OnMouseUp", left); plugin.Tick(); plugin.OSTick();
+                view.SelectTab(1);
+                Check(view.Tool == TileTool.Draw, "Draw is the default tool");
+                view.Tool = TileTool.Pick;
+                view.MapMouseDown(4, 4, TileMouseButton.Left); view.MapMouseUp(); plugin.Tick(); plugin.OSTick();
                 Check(fake.WriteAddresses.Count == 0, "Pick tool samples without writing memory");
-                draw.Checked = true; tile.Value = 341; palette.Value = 4;
-                Check(draw.Checked && !pick.Checked && !clearTool.Checked, "Draw button exclusively selects the drawing tool");
-                mouse("OnMouseDown", left); mouse("OnMouseUp", left); plugin.OSTick();
+                view.Tool = TileTool.Draw; view.BrushTile = 341; view.BrushPalette = 4;
+                view.MapMouseDown(4, 4, TileMouseButton.Left); view.MapMouseUp(); plugin.OSTick();
                 Check(fake.WriteAddresses.Count == 0, "running-machine edits are queued for emulator Tick");
                 plugin.Tick(); plugin.OSTick();
                 Check(fake.Bank5[0x2000] == 0x55 && fake.Bank5[0x2001] == 0x41, "UI painting reaches live emulator map");
+                Check(view.UndoAvailable, "Undo cell is enabled after an edit");
                 fake.DebuggerState = 1;
-                tile.Value = 200; palette.Value = 6;
-                var second = new MouseEventArgs(MouseButtons.Left, 1, 20, 4, 0);
-                mouse("OnMouseDown", second); mouse("OnMouseUp", second); plugin.OSTick();
+                view.BrushTile = 200; view.BrushPalette = 6;
+                view.MapMouseDown(20, 4, TileMouseButton.Left); view.MapMouseUp(); plugin.OSTick();
                 Check(fake.Bank5[0x2002] == 200 && fake.Bank5[0x2003] == 0x60, "editing works while paused without Tick");
-                clear.Value = 7;
-                clearTool.Checked = true;
-                Check(clearTool.Checked && !pick.Checked && !draw.Checked, "Clear button exclusively selects the clear tool");
-                mouse("OnMouseDown", second); mouse("OnMouseUp", second); plugin.OSTick();
-                Check(fake.Bank5[0x2002] == 7 && fake.Bank5[0x2003] == 0x60, "Clear button makes left-click clear to selected blank tile");
-                controls.Controls.OfType<Button>().Single(c => c.Name == "UndoCell").PerformClick(); plugin.OSTick();
+                view.ClearTile = 7;
+                view.Tool = TileTool.Clear;
+                view.MapMouseDown(20, 4, TileMouseButton.Left); view.MapMouseUp(); plugin.OSTick();
+                Check(fake.Bank5[0x2002] == 7 && fake.Bank5[0x2003] == 0x60, "Clear tool makes left-click clear to selected blank tile");
+                view.UndoCell(); plugin.OSTick();
                 Check(fake.Bank5[0x2002] == 200, "Undo cell restores a clear-tool edit");
-                draw.Checked = true;
-                var right = new MouseEventArgs(MouseButtons.Right, 1, 20, 4, 0);
-                mouse("OnMouseDown", right); mouse("OnMouseUp", right); plugin.OSTick();
+                view.Tool = TileTool.Draw;
+                view.MapMouseDown(20, 4, TileMouseButton.Right); view.MapMouseUp(); plugin.OSTick();
                 Check(fake.Bank5[0x2002] == 7 && fake.Bank5[0x2003] == 0x60, "right-click clears to selected blank tile");
-                controls.Controls.OfType<Button>().Single(c => c.Name == "UndoCell").PerformClick(); plugin.OSTick();
-                Check(fake.Bank5[0x2002] == 200, "Undo cell button restores latest edit while paused");
-                mouse("OnMouseDown", new MouseEventArgs(MouseButtons.Middle, 1, 4, 4, 0));
-                Check(tile.Value == 341 && palette.Value == 4, "middle-click picks tile and palette from map");
-                tile.Value = 9;
-                mouse("OnMouseDown", new MouseEventArgs(MouseButtons.Left, 1, 36, 4, 0));
-                mouse("OnMouseMove", new MouseEventArgs(MouseButtons.Left, 0, 52, 4, 0));
-                mouse("OnMouseUp", new MouseEventArgs(MouseButtons.Left, 1, 52, 4, 0)); plugin.OSTick();
+                view.UndoCell(); plugin.OSTick();
+                Check(fake.Bank5[0x2002] == 200, "Undo cell restores latest edit while paused");
+                view.MapMouseDown(4, 4, TileMouseButton.Middle);
+                Check(view.BrushTile == 341 && view.BrushPalette == 4, "middle-click picks tile and palette from map");
+                view.BrushTile = 9;
+                view.MapMouseDown(36, 4, TileMouseButton.Left);
+                view.MapMouseMove(52, 4);
+                view.MapMouseUp(); plugin.OSTick();
                 Check(fake.Bank5[0x2004] == 9 && fake.Bank5[0x2006] == 9, "drag painting edits successive cells");
-                Check(form.Controls.OfType<Label>().Any(l => l.Text.Contains("Cell 3,0 | tile 9") && l.Text.Contains("palette 4")), "hover footer refreshes after editing without moving the mouse");
-                var mapImage = (Bitmap)canvas.GetType().GetField("image", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(canvas);
-                Check(mapImage.GetPixel(24, 0).ToArgb() == Color.Red.ToArgb(), "edited tile and palette refresh the map bitmap immediately");
+                Check(view.Details.Contains("Cell 3,0 | tile 9") && view.Details.Contains("palette 4"), "hover footer refreshes after editing without moving the mouse");
+                Check(view.MapPixel(24, 0) == Color.Red.ToArgb(), "edited tile and palette refresh the map image immediately");
                 int writes = fake.WriteAddresses.Count;
-                mouse("OnMouseDown", new MouseEventArgs(MouseButtons.Left, 1, 645, 4, 0)); plugin.OSTick();
+                view.MapMouseDown(645, 4, TileMouseButton.Left); view.MapMouseUp(); plugin.OSTick();
                 Check(fake.WriteAddresses.Count == writes, "clicking outside the map does not write");
-                using (var bitmap = new Bitmap(form.Width, form.Height))
-                { form.DrawToBitmap(bitmap, new Rectangle(0, 0, form.Width, form.Height)); bitmap.Save(System.IO.Path.Combine(outputDirectory, "tilemap-editor.png"), ImageFormat.Png); }
+                view.MapMouseDown(4, 4, TileMouseButton.Left); view.MapMouseMove(700, 4); view.MapMouseMove(2000, 2000); view.MapMouseUp(); plugin.OSTick();
+                Check(fake.WriteAddresses.Count == writes + 1, "dragging off the map stops painting without writing");
+                view.BrushTile = 600;
+                Check(view.BrushTile == view.TileMaximum, "tile number is limited to the map's tile range");
+                view.TileCountIndex = 1;
+                view.TilesMouseDown(4, 4, TileMouseButton.Left);
+                Check(view.BrushTile == 0 && view.EditStatus.Contains("Brush: tile 0"), "clicking a pattern selects it as the brush");
             }
             finally { plugin.Quit(); }
+        }
+
+        // A plugin window: records the ImGui draw callback and textures, fires OnClosed when closed
+        private sealed class FakeWindow : RealProxy
+        {
+            internal string Title;
+            internal Action Draw;
+            internal bool Closed;
+            internal int Textures, Uploads;
+            private EventHandler closed;
+            internal iWindow Api { get { return (iWindow)GetTransparentProxy(); } }
+            internal FakeWindow(string title) : base(typeof(iWindow)) { Title = title; }
+
+            // The user closing the OS window
+            internal void UserClose() { if (Closed) return; Closed = true; if (closed != null) closed(Api, EventArgs.Empty); }
+
+            public override IMessage Invoke(IMessage message)
+            {
+                var call = (IMethodCallMessage)message;
+                object result = null;
+                switch (call.MethodName)
+                {
+                    case "SetImGuiDraw": Draw = (Action)call.Args[0]; result = true; break;
+                    case "CreateImGuiTexture": result = new IntPtr(++Textures); break;
+                    case "UpdateImGuiTexture": Uploads++; break;
+                    case "DestroyImGuiTexture": break;
+                    case "add_OnClosed": closed += (EventHandler)call.Args[0]; break;
+                    case "remove_OnClosed": closed -= (EventHandler)call.Args[0]; break;
+                    case "Close": UserClose(); break;
+                    case "get_Title": result = Title; break;
+                    default: throw new Exception("Unexpected window operation: " + call.MethodName);
+                }
+                return new ReturnMessage(result, null, 0, call.LogicalCallContext, call);
+            }
         }
 
         private sealed class Emulator : RealProxy
@@ -458,6 +400,8 @@ namespace TileViewer
             internal int LastPalette, MemoryReads;
             internal int DebuggerState;
             internal readonly List<int> WriteAddresses = new List<int>();
+            internal readonly List<FakeWindow> Windows = new List<FakeWindow>();
+            internal int OpenWindows { get { return Windows.Count(w => !w.Closed); } }
             internal iCSpect Api { get { return (iCSpect)GetTransparentProxy(); } }
             internal Emulator() : base(typeof(iCSpect)) { for (int i = 0; i < 256; i++) Palette[i] = Palette2[i] = (uint)i; }
 
@@ -486,7 +430,9 @@ namespace TileViewer
                     case "Debugger":
                         if ((eDebugCommand)call.Args[0] != eDebugCommand.GetState) throw new Exception("Unexpected debugger operation");
                         result = DebuggerState; break;
-                    case "GetGlobal": result = IntPtr.Zero; break;
+                    case "OpenWindow":
+                        var window = new FakeWindow((string)call.Args[0]);
+                        Windows.Add(window); result = window.Api; break;
                     default: throw new Exception("Unexpected emulator operation: " + call.MethodName);
                 }
                 return new ReturnMessage(result, null, 0, call.LogicalCallContext, call);

@@ -1,108 +1,61 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Drawing;
-using System.Drawing.Imaging;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace SpriteViewer
 {
     public class ZXSprite
     {
+        // ******************************************************************************************
         /// <summary>
-        ///     Draw a sprite into a bitmap
+        ///     Draw a 16x16 sprite pattern into an ARGB image
         /// </summary>
-        /// <param name="_buffer"></param>
-        public static unsafe void DrawSprite(Graphics _g, Bitmap _bmp, bool _Is16Col, int _index, int _SpritePalette, byte[] _buffer)
+        /// <param name="_dest">ARGB destination image</param>
+        /// <param name="_destStride">destination width in pixels</param>
+        /// <param name="_dx">destination X</param>
+        /// <param name="_dy">destination Y</param>
+        /// <param name="_Is16Col">4 bit (128 byte) patterns? else 8 bit (256 byte)</param>
+        /// <param name="_index">pattern number</param>
+        /// <param name="_SpritePalette">palette offset (added to every pixel)</param>
+        /// <param name="_buffer">sprite pattern memory</param>
+        /// <param name="_palette">sprite palette, 9 bit RRRGGGBBB per entry</param>
+        // ******************************************************************************************
+        public static void DrawSprite(UInt32[] _dest, int _destStride, int _dx, int _dy, bool _Is16Col, int _index, int _SpritePalette, byte[] _buffer, uint[] _palette)
         {
-            BitmapData data = _bmp.LockBits(
-                        new Rectangle(0, 0, 16, 16),
-                        System.Drawing.Imaging.ImageLockMode.ReadWrite,
-                        _bmp.PixelFormat);
-            byte* pData8 = (byte*)data.Scan0;
-
-
             if (_Is16Col)
             {
-                _index = 128 * _index;
-                for (int y = 0; y < _bmp.Height; y++)
+                int src = 128 * _index;
+                for (int y = 0; y < 16; y++)
                 {
-                    int dest = 0;
-                    UInt32* pLine = (UInt32*) (pData8 + (y * data.Stride));
-                    for (int x = 0; x < (_bmp.Width/2); x++)
+                    int dest = ((_dy + y) * _destStride) + _dx;
+                    for (int x = 0; x < 8; x++)
                     {
-                        int c = (_buffer[_index]>>4)&0xf;
-                        UInt32 col = ZXPalette.Get( (c + _SpritePalette)&0xff ); // (14 * 16));
-                        pLine[dest++] = col;
-                        c = (_buffer[_index++] & 0xf);
-                        col = ZXPalette.Get((c + _SpritePalette) & 0xff);
-                        pLine[dest++] = col;
+                        byte b = _buffer[src++];
+                        _dest[dest++] = Colour(_palette, ((b >> 4) & 0xf) + _SpritePalette);
+                        _dest[dest++] = Colour(_palette, (b & 0xf) + _SpritePalette);
                     }
                 }
-            } 
+            }
             else
             {
-                _index = 256 * _index;
-                for (int y = 0; y < _bmp.Height; y++)
+                int src = 256 * _index;
+                for (int y = 0; y < 16; y++)
                 {
-                    UInt32* pLine = (UInt32*)(pData8 + (y * data.Stride));
-                    for (int x = 0; x < _bmp.Width; x++)
+                    int dest = ((_dy + y) * _destStride) + _dx;
+                    for (int x = 0; x < 16; x++)
                     {
-                        byte c = _buffer[_index++];
-                        UInt32 col = ZXPalette.Get((int)(c+ _SpritePalette)&0xff);
-                        pLine[x] = col;
+                        _dest[dest++] = Colour(_palette, _buffer[src++] + _SpritePalette);
                     }
                 }
             }
-            _bmp.UnlockBits(data);
         }
 
+        // ******************************************************************************************
         /// <summary>
-        ///     Draw a sprite into a bitmap
+        ///     Palette index -> ARGB
         /// </summary>
-        /// <param name="_buffer"></param>
-        public static unsafe void DrawSprite(UInt32[] _bmp, bool _Is16Col, int _index, int _SpritePalette, byte[] _buffer)
+        // ******************************************************************************************
+        static UInt32 Colour(uint[] _palette, int _index)
         {
-            fixed (UInt32* pBuffer = _bmp)
-            {
-                int stride = 16 * 4;
-                byte* pData8 = (byte*)pBuffer;
-                if (_Is16Col)
-                {
-                    _index = 128 * _index;
-                    for (int y = 0; y < 16; y++)
-                    {
-                        int dest = 0;
-                        UInt32* pLine = (UInt32*)(pData8 + (y * stride));
-                        for (int x = 0; x < (16 / 2); x++)
-                        {
-                            int c = (_buffer[_index] >> 4) & 0xf;
-                            UInt32 col = ZXPalette.Get((c + _SpritePalette) & 0xff); // (14 * 16));
-                            pLine[dest++] = col;
-                            c = (_buffer[_index++] & 0xf);
-                            col = ZXPalette.Get((c + _SpritePalette) & 0xff);
-                            pLine[dest++] = col;
-                        }
-                    }
-                }
-                else
-                {
-                    _index = 256 * _index;
-                    for (int y = 0; y < 16; y++)
-                    {
-                        UInt32* pLine = (UInt32*)(pData8 + (y * stride));
-                        for (int x = 0; x < 16; x++)
-                        {
-                            byte c = _buffer[_index++];
-                            UInt32 col = ZXPalette.Get((int)(c + _SpritePalette) & 0xff);
-                            pLine[x] = col;
-                        }
-                    }
-                }
-            }
+            return ZXPalette.DefaultColours_NeverChanges[_palette[_index & 0xff] & 0x1ff];
         }
-
-
     }
 }

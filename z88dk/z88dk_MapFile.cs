@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.Remoting.Channels;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace Pasta80Symbols
@@ -153,6 +154,48 @@ namespace Pasta80Symbols
         /// <returns>
         /// </returns>
         // ****************************************************************************************************************************
+        /// <summary>The 8K pages a NEX starts with in each 8K slot of the 64K (slots 0-1 are ROM)</summary>
+        static readonly int[] NexPages = { -1, -1, 10, 11, 4, 5, 0, 1 };
+        /// <summary>"PAGE_nn" / "BANK_nn" anywhere in a section name (PAGE_40, RODATA_PAGE_41, CODE_BANK_7...)</summary>
+        static readonly Regex PageName = new Regex(@"(?:^|_)PAGE_(\d+)(?:_|$)", RegexOptions.IgnoreCase);
+        static readonly Regex BankName = new Regex(@"(?:^|_)BANK_(\d+)(?:_|$)", RegexOptions.IgnoreCase);
+
+        // ****************************************************************************************
+        /// <summary>
+        ///     Where a symbol lives in physical memory. CSpect finds labels by physical address (through
+        ///     the MMU), so this has to be right for the Monitor and debugger to show them.
+        /// </summary>
+        /// <param name="_address">The symbol's 64K address</param>
+        /// <param name="_section">Its section ("code_compiler", "RODATA_PAGE_41"...)</param>
+        // ****************************************************************************************
+        static long PhysicalAddress(long _address, string _section, Dictionary<string, SectionDef> _sections)
+        {
+            int a = (int)_address;
+            if (!string.IsNullOrEmpty(_section))
+            {
+                // an 8K page, or a 16K bank, by name
+                Match m = PageName.Match(_section);
+                if (m.Success && int.TryParse(m.Groups[1].Value, out int page)) return (page * 8192L) + (a & 0x1fff);
+                m = BankName.Match(_section);
+                if (m.Success && int.TryParse(m.Groups[1].Value, out int bank)) return (bank * 16384L) + (a & 0x3fff);
+
+                // a section whose __<section>_head says which page it's in
+                SectionDef res;
+                if (_sections.TryGetValue("__" + _section + "_head", out res) && res.page >= 0)
+                {
+                    return (res.page * 8192L) + (a & 0x1fff);
+                }
+            }
+
+            // the main 64K: the banks a NEX is loaded into (ROM stays as it is)
+            if (a >= 0 && a <= 0xffff)
+            {
+                int p = NexPages[a >> 13];
+                if (p >= 0) return (p * 8192L) + (a & 0x1fff);
+            }
+            return _address;
+        }
+
         public bool LoadMapFile(string[] pBuffer)
         {
             Dictionary<string, SectionDef> seclookup;
@@ -183,52 +226,7 @@ namespace Pasta80Symbols
                 if (Address[0] == '$') Address = Address.Substring(1);
                 long Address64k = CSpect.HexToInt64(Address);
                 long AddressPhysical = Address64k;
-                if (section.ToUpper().StartsWith("PAGE_"))
-                {
-                    string[] split = section.Split('_');
-                    string pagenumber = split[1];
-                    int bank = 0;
-                    if (!Int32.TryParse(pagenumber, out bank))
-                    {
-                        AddressPhysical = Address64k;
-                    }
-                    else
-                    {
-                        int bank_offset = (int)Address64k & 0x1fff;
-                        AddressPhysical = bank_offset + (bank * 8192);
-                    }
-                }
-                else
-                {
-                    // got a section that DOESN'T have a PAGE_ in it. So look it up
-                    string lookup = "__" + section + "_head";
-                    SectionDef res;
-                    if (seclookup.TryGetValue(lookup, out res))
-                    {
-                        if (res.page == -1)
-                        {
-                            // found one, so try and find a match for the ADDRESS that has a PAGE in it
-                            foreach (KeyValuePair<string, SectionDef> pair in seclookup)
-                            {
-                                // find a label that CONTAINS this one ("__PAGE_??_SECTIONNAME_head" etc)
-                                SectionDef d = pair.Value;
-                                if (d.label.Contains(section) && d.page != -1)
-                                {
-                                    // update the original - make loading a little quicker
-                                    res.page = d.page;
-                                    // found a page with the same start address
-                                    int bank_offset = (int)Address64k & 0x1fff;
-                                    AddressPhysical = bank_offset + (d.page * 8192);
-                                }
-                            }
-                        }
-                        else
-                        {
-                            int bank_offset = (int)Address64k & 0x1fff;
-                            AddressPhysical = bank_offset + (res.page * 8192);
-                        }
-                    }
-                }
+                AddressPhysical = PhysicalAddress(Address64k, section, seclookup);
 
                 if (Label.StartsWith("_")) Label = Label.Substring(1);
 
