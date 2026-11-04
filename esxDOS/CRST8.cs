@@ -294,6 +294,67 @@ namespace esxDOS
 
         // **********************************************************************
         /// <summary>
+        ///     A path as a Next program gives it, as a path on this machine. The Next uses "/" (or "\"),
+        ///     may start with a drive ("C:"), and is absolute from the card's root ("/games") or relative to
+        ///     the current folder ("games", "../demos"). "." and ".." are worked out here, and ".." never
+        ///     goes above the card's root. Each part takes the case of the name that's there (FAT doesn't
+        ///     care about case, Linux does).
+        ///     (Path.Combine() was used: "/games" is a rooted path on macOS and Linux, so it threw the card's
+        ///     folder away, and paths were glued together with "\", a plain character there.)
+        /// </summary>
+        // **********************************************************************
+        public string NextToHostPath(string _next)
+        {
+            string p = (_next ?? "").Replace('\\', '/');
+            if (p.Length >= 2 && p[1] == ':' && char.IsLetter(p[0])) p = "/" + p.Substring(2);       // drive: from the root
+
+            List<string> parts = new List<string>();
+            if (!p.StartsWith("/")) parts.AddRange(CurrentDirectory.Split(new char[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries));
+            foreach (string part in p.Split(new char[] { '/' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (part == ".") continue;
+                if (part == "..")
+                {
+                    if (parts.Count > 0) parts.RemoveAt(parts.Count - 1);
+                    continue;
+                }
+                parts.Add(part);
+            }
+
+            string full = MMCPath;
+            foreach (string part in parts) full = Path.Combine(full, MatchCase(full, part));
+            return full;
+        }
+
+        // **********************************************************************
+        /// <summary>
+        ///     The name in _dir that matches _name whatever its case (or _name if there isn't one)
+        /// </summary>
+        // **********************************************************************
+        static string MatchCase(string _dir, string _name)
+        {
+            try
+            {
+                if (Directory.Exists(_dir))
+                {
+                    foreach (string e in Directory.GetFileSystemEntries(_dir))
+                    {
+                        string n = Path.GetFileName(e);
+                        if (n == _name) return n;
+                    }
+                    foreach (string e in Directory.GetFileSystemEntries(_dir))
+                    {
+                        string n = Path.GetFileName(e);
+                        if (string.Equals(n, _name, StringComparison.OrdinalIgnoreCase)) return n;
+                    }
+                }
+            }
+            catch { }
+            return _name;
+        }
+
+        // **********************************************************************
+        /// <summary>
         ///     Get current directory
         /// </summary>
         // **********************************************************************
@@ -863,7 +924,7 @@ namespace esxDOS
                 OpenFileBuffer += (char)c;
             }
 
-            OpenFileBuffer = Path.Combine(CurrentPath, OpenFileBuffer);
+            OpenFileBuffer = NextToHostPath(OpenFileBuffer);
 
             // make sure it's 8.3 format name - at most....
             //bool verify = (bool) CSpect.GetGlobal(eGlobal.verify_EightDotThree);
@@ -1309,8 +1370,7 @@ namespace esxDOS
 
             int add = regs.IX;
             int len = 0;
-            string name = CurrentPath;
-            if (!CurrentPath.EndsWith("\\")) name += "\\";
+            string name = "";
             while (len < 1023)
             {
                 byte b = CSpect.Peek((UInt16)add++);
@@ -1318,6 +1378,7 @@ namespace esxDOS
                 name += (char)b;
                 len++;
             }
+            name = NextToHostPath(name);
 
             name = FindFileName(name);
             if (!File.Exists(name))
@@ -1367,7 +1428,7 @@ namespace esxDOS
 
 
             // get src name
-            string SrcFile = CurrentPath;
+            string SrcFile = "";
             int len = SrcFile.Length;
             int len2 = len;
             int add = regs.IX;
@@ -1379,7 +1440,8 @@ namespace esxDOS
             }
 
             // get dest name
-            string DestFile = CurrentPath;
+            SrcFile = NextToHostPath(SrcFile);
+            string DestFile = "";
             len = DestFile.Length;
             len2 = len;
             add = regs.DE;
@@ -1389,6 +1451,7 @@ namespace esxDOS
                 if (m[0] == 0x00) break;
                 DestFile += (char)m[0];
             }
+            DestFile = NextToHostPath(DestFile);
 
 
 
@@ -1696,9 +1759,10 @@ namespace esxDOS
         public bool GetCurrentDirectory()
         {
             int address = regs.IX;
-            for (int i=0;i<CurrentDirectory.Length;i++)
+            string cwd = CurrentDirectory.Replace('\\', '/');        // "/" on the Next, whatever the host uses
+            for (int i=0;i<cwd.Length;i++)
             {
-                byte c = (byte)CurrentDirectory[i];
+                byte c = (byte)cwd[i];
                 CSpect.Poke((UInt16)address++, c);
             }
             CSpect.Poke((UInt16)address++, 0x00);
@@ -2072,29 +2136,16 @@ namespace esxDOS
 
                 max_len--;
             }
-            if(dir == ".")
+            // "/games", "games/demos", "..", "C:/" ... (never above the root folder given by the MMC= command line)
+            string full = NextToHostPath(dir);
+            if (!Directory.Exists(full))
             {
                 regs.A = -1;
                 return true;
             }
-
-            // Make sure we can't go "below" the root folder specified in MMC= command line
-            string p = CurrentDirectory;
-            CurrentDirectory = Path.Combine(CurrentDirectory, dir);
-            string s = Path.GetFullPath(CurrentPath);
-            if( !s.ToLower().Contains(MMCPath.ToLower()) )
-            {
-                CurrentDirectory = p;
-                regs.A = -1;
-                return true;
-            }else
-            {
-                CurrentDirectory = s.Substring(MMCPath.Length);
-                if(CurrentDirectory.StartsWith("\\") || CurrentDirectory.StartsWith("//"))
-                {
-                    CurrentDirectory = CurrentDirectory.Substring(1);
-                }
-            }
+            // kept relative to the card's root, with no separator in front (a leading "/" made it a rooted path
+            // on macOS and Linux, so every file after a CHDIR was looked for under the machine's root)
+            CurrentDirectory = full.Length > MMCPath.Length ? full.Substring(MMCPath.Length).TrimStart('/', '\\') : "";
             return false;
         }
 
@@ -2130,7 +2181,7 @@ namespace esxDOS
 
             try
             {
-                Directory.CreateDirectory(new_folder);
+                Directory.CreateDirectory(NextToHostPath(new_folder));
             }catch
             {
                 regs.A = -2;
@@ -2210,11 +2261,10 @@ namespace esxDOS
 
             // get current MMC path
             MMCPath = (string) CSpect.GetGlobal(eGlobal.MMCPath);
-            if (MMCPath.EndsWith("\\") || MMCPath.EndsWith("/"))
-            {
-                MMCPath = MMCPath.Substring(0, MMCPath.Length - 1);
-            }
-            MMCPath = Path.GetFullPath(MMCPath);
+            MMCPath = MMCPath.TrimEnd('\\', '/');           // CSpect adds "\\" even on macOS/Linux, where it's a plain character
+            if (MMCPath == "") MMCPath = ".";
+            MMCPath = Path.GetFullPath(MMCPath).TrimEnd('\\', '/');
+            if (MMCPath == "" || MMCPath.EndsWith(":")) MMCPath += Path.DirectorySeparatorChar;   // "/" or "C:\\" itself
 
             // Now do the actual commands
             switch ((RST08)FileOp)
