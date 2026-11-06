@@ -781,6 +781,19 @@ namespace Plugin
 
         // ------------------------------------------------------------
         /// <summary>
+        ///     Set the MMC path, as -mmc= does.
+        ///     A folder becomes esxDOS's root: the next RST $08 call uses it.
+        ///     An SD card image file becomes the Next's SD card: the machine hard resets and boots NextZXOS from it.
+        ///     Going from an image back to a folder also hard resets, to leave NextZXOS.
+        /// </summary>
+        /// <param name="_path">A folder, or an SD card image file</param>
+        /// <param name="_reset">false: don't reset now - a change of card or machine happens at the next hard reset (F3, or ResetMachine())</param>
+        /// <returns>false if there's no such folder, or the file isn't an SD card image with NextZXOS on it (nothing changes)</returns>
+        // ------------------------------------------------------------
+        bool SetMMCPath(string _path, bool _reset = true);
+
+        // ------------------------------------------------------------
+        /// <summary>
         ///     Execute another plugin command
         /// </summary>
         /// <param name="_command">the command string to execute</param>
